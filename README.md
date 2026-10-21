@@ -34,7 +34,7 @@ Koden ligger offentlig (gratis GitHub Pages krever det), men dataene dine ligger
 4. **Authentication > Users > Add user > Create new user**: skriv e-post og et langt passord, huk av *Auto Confirm User*. Husholdning, konto og standardkategorier lages automatisk.
 5. **Project Settings > API** (eller *Connect*): kopier *Project URL* og den offentlige nøkkelen (`anon` eller `publishable`). Aldri `service_role` eller `secret`.
 
-Etter at `0001_fase1.sql` er kjørt, kjør også `0002_fjern_tofaktor.sql`, `0003_rettelser.sql` og `0004_stram_inn_funksjoner.sql` på samme måte, i den rekkefølgen. Appen bruker bare e-post og passord.
+Etter at `0001_fase1.sql` er kjørt, kjør også resten av filene i `supabase/migrations` på samme måte, i nummerrekkefølge, i den rekkefølgen. Appen bruker bare e-post og passord.
 
 ### 2. GitHub
 
@@ -101,4 +101,6 @@ All logikk ligger i `src/lib/finance.ts` og er testet i `tests/lib/`.
 
 **Fase 1 (denne):** innlogging, database, kategorier med underkategorier, hurtigregistrering med kategoriforslag, detaljert registrering med splitt, refusjon koblet til kjøp, kontoer og overføringer, transaksjonslogg med søk og filter, dashboard med prognose, lys og mørk modus, PWA.
 
-**Neste:** budsjetter per kategori, faste utgifter, sparemål, analyseside, CSV-import og -eksport, kvitteringer, fellesøkonomi. Datamodellen har allerede husholdning og deling på plass, så dette blir utvidelser og ikke ombygging.
+**Fase 2:** budsjett per kategori, faste utgifter og inntekter som registreres automatisk, import av kontoutskrift fra DNB (CSV) uten duplikater, og sammenligning med samme tid forrige måned.
+
+**Neste:** sparemål, analyseside, eksport, kvitteringer, fellesøkonomi. Datamodellen har allerede husholdning og deling på plass, så dette blir utvidelser og ikke ombygging.

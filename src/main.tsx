@@ -10,6 +10,9 @@ import { ToastProvider } from './components/Toast'
 import { Dashboard } from './pages/Dashboard'
 import { Transactions } from './pages/Transactions'
 import { Settings } from './pages/Settings'
+import { BudgetPage } from './pages/BudgetPage'
+import { RecurringPage } from './pages/RecurringPage'
+import { ImportPage } from './pages/ImportPage'
 import { configured } from './lib/supabase'
 import { applyTheme, storedTheme } from './lib/theme'
 import { startUpdates } from './lib/update'
@@ -51,6 +54,9 @@ createRoot(document.getElementById('root')!).render(
                       <Route index element={<Dashboard />} />
                       <Route path="transaksjoner" element={<Transactions />} />
                       <Route path="innstillinger" element={<Settings />} />
+                      <Route path="budsjett" element={<BudgetPage />} />
+                      <Route path="faste" element={<RecurringPage />} />
+                      <Route path="import" element={<ImportPage />} />
                       <Route path="*" element={<Dashboard />} />
                     </Route>
                   </Routes>

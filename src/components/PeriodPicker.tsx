@@ -15,7 +15,8 @@ function step(p: PeriodSel, d: number): PeriodSel | null {
   return null
 }
 
-export function PeriodPicker() {
+/** align="right" når velgeren står til høyre på siden, så menyen ikke går utenfor skjermen */
+export function PeriodPicker({ align = 'left' }: { align?: 'left' | 'right' }) {
   const { period, setPeriod } = useApp()
   const [open, setOpen] = useState(false)
   const [from, setFrom] = useState(period.mode === 'custom' ? period.from : monthPeriod(monthOf(todayISO())).from)
@@ -62,15 +63,15 @@ export function PeriodPicker() {
         <button className="btn btn-ghost px-2" aria-label="Neste periode" disabled={!next} onClick={() => next && setPeriod(next)}>{arrow('r')}</button>
       </div>
       {open && (
-        <div className="absolute z-30 mt-1 left-0 w-72 rounded-xl bg-surface shadow-xl border border-line p-3 space-y-2">
+        <div className={`absolute z-30 mt-1 ${align === 'right' ? 'right-0' : 'left-0'} w-72 max-w-[calc(100vw-2rem)] rounded-xl bg-surface shadow-xl border border-line p-3 space-y-2`}>
           <button className="btn btn-ghost w-full justify-start" onClick={() => { setPeriod({ mode: 'month', month: thisMonth }); setOpen(false) }}>Denne måneden</button>
           <button className="btn btn-ghost w-full justify-start" onClick={() => { setPeriod({ mode: 'month', month: shiftMonth(thisMonth, -1) }); setOpen(false) }}>Forrige måned</button>
           <button className="btn btn-ghost w-full justify-start" onClick={() => { setPeriod({ mode: 'year', year: thisMonth.year }); setOpen(false) }}>Hele {thisMonth.year}</button>
           <form className="border-t border-line pt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); if (valid) { setPeriod({ mode: 'custom', from, to }); setOpen(false) } }}>
             <p className="text-sm text-muted">Egen periode</p>
-            <div className="flex gap-2">
-              <input type="date" className="field text-sm" aria-label="Fra dato" value={from} onChange={(e) => setFrom(e.target.value)} />
-              <input type="date" className="field text-sm" aria-label="Til dato" value={to} onChange={(e) => setTo(e.target.value)} />
+            <div className="grid grid-cols-2 gap-2">
+              <input type="date" className="field text-sm min-w-0" aria-label="Fra dato" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <input type="date" className="field text-sm min-w-0" aria-label="Til dato" value={to} onChange={(e) => setTo(e.target.value)} />
             </div>
             {from && to && from > to && <p className="text-xs text-bad">Fra-datoen må være før til-datoen.</p>}
             <button className="btn btn-primary w-full" disabled={!valid}>Vis periode</button>

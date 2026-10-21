@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useApp } from '../app/AppContext'
 import { useToast } from '../components/Toast'
 import { useAccountMutations, useCategoryMutations, useSetDefaultAccount, useSetTheme, type Account, type Category } from '../lib/api'
@@ -10,6 +11,7 @@ export function Settings() {
   return (
     <div className="mx-auto max-w-3xl px-4 md:px-8 pt-4 md:pt-8 space-y-10">
       <h1 className="text-2xl font-bold tracking-tight">Innstillinger</h1>
+      <Planning />
       <Appearance />
       <Categories />
       <Accounts />
@@ -25,6 +27,30 @@ function Section({ id, title, children, intro }: { id: string; title: string; in
       {intro && <p className="text-sm text-muted mt-1">{intro}</p>}
       <div className="mt-3">{children}</div>
     </section>
+  )
+}
+
+function Planning() {
+  const { budgets, recurring } = useApp()
+  const items = [
+    { to: '/budsjett', title: 'Budsjett', text: budgets.length ? `${budgets.length} kategorier har budsjett` : 'Sett et beløp per kategori i måneden' },
+    { to: '/faste', title: 'Faste poster', text: recurring.length ? `${recurring.filter((r) => r.is_active).length} aktive, registreres automatisk` : 'Husleie, abonnementer og lønn, registrert automatisk' },
+    { to: '/import', title: 'Importer fra banken', text: 'Last inn kontoutskrift fra DNB som CSV' },
+  ]
+  return (
+    <ul className="rounded-xl bg-surface divide-y divide-line">
+      {items.map((it) => (
+        <li key={it.to}>
+          <Link to={it.to} className="flex items-center gap-3 px-4 py-3 hover:bg-sunken rounded-xl">
+            <span className="flex-1 min-w-0">
+              <span className="block font-medium">{it.title}</span>
+              <span className="block text-sm text-muted truncate">{it.text}</span>
+            </span>
+            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" className="text-muted"><path d="M7 4l5 5-5 5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </Link>
+        </li>
+      ))}
+    </ul>
   )
 }
 

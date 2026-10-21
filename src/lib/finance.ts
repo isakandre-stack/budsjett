@@ -1,5 +1,5 @@
 // All økonomisk logikk for oppsummeringer samlet på ett sted, så den kan testes.
-import { daysBetweenInclusive, type Period } from './dates'
+import { daysBetweenInclusive, daysInMonth, monthOf, shiftDay, shiftMonth, type Period } from './dates'
 
 export type TxKind =
   | 'expense'
@@ -50,6 +50,8 @@ export interface TxLike {
   occurred_on: string
   category_id: string | null
   transaction_splits?: SplitLike[] | null
+  /** Satt når transaksjonen er registrert automatisk fra en fast post */
+  recurring_id?: string | null
 }
 
 export interface CategoryLike {
@@ -115,6 +117,10 @@ export interface Summary {
   avgPerDayOre: number | null
   /** Anslag for hele perioden basert på tempoet så langt. Bare for pågående periode. */
   forecastSpendingOre: number | null
+  /** Forbruk fra faste poster som er registrert i perioden */
+  fixedSpendingOre: number
+  /** Faste utgifter som kommer senere i perioden, men ikke er registrert ennå */
+  upcomingFixedOre: number
   byCategory: CategoryTotal[]
   transactionCount: number
 }
@@ -124,7 +130,9 @@ export function summarize(
   categories: CategoryLike[],
   period: Period,
   today: string,
+  opts: { upcomingFixedOre?: number } = {},
 ): Summary {
+  const upcomingFixed = opts.upcomingFixedOre ?? 0
   const inPeriod = txs.filter((t) => t.occurred_on >= period.from && t.occurred_on <= period.to)
 
   let income = 0
@@ -135,6 +143,8 @@ export function summarize(
   let net = 0
   // Forbruk som er ført på en dato som ikke har kommet ennå, for eksempel husleie lagt inn på forhånd
   let futureSpending = 0
+  // Faste poster (husleie, abonnementer) kommer én gang i måneden og sier ingenting om tempoet
+  let fixedSpending = 0
 
   const catById = new Map(categories.map((c) => [c.id, c]))
   const top = new Map<string | null, { amount: number; txIds: Set<string>; children: Map<string, number> }>()
@@ -149,7 +159,8 @@ export function summarize(
     if (eff.spending === 0) continue
 
     spending += eff.spending * t.amount_ore
-    if (t.occurred_on > today) futureSpending += eff.spending * t.amount_ore
+    if (t.recurring_id) fixedSpending += eff.spending * t.amount_ore
+    else if (t.occurred_on > today) futureSpending += eff.spending * t.amount_ore
     for (const line of categoryLines(t)) {
       const cat = line.category_id ? catById.get(line.category_id) : undefined
       const topId = cat ? (cat.parent_id ?? cat.id) : null
@@ -188,12 +199,15 @@ export function summarize(
   else if (today > period.to) daysElapsed = daysTotal
   else daysElapsed = daysBetweenInclusive(period.from, today)
 
-  // Snitt og tempo regnes bare av det som faktisk har skjedd til og med i dag. Forbruk ført
-  // fram i tid legges til anslaget én gang, i stedet for å blåses opp som om det var dagens tempo.
-  const spentSoFar = spending - futureSpending
-  const avgPerDayOre = daysElapsed > 0 ? Math.round(spentSoFar / daysElapsed) : null
+  // Tempoet regnes bare av det variable forbruket som faktisk har skjedd til og med i dag.
+  // Faste poster og forbruk ført fram i tid legges til anslaget én gang, i stedet for å
+  // blåses opp som om det var dagens tempo.
+  const variableSoFar = spending - futureSpending - fixedSpending
+  const avgPerDayOre = daysElapsed > 0 ? Math.round((spending - futureSpending) / daysElapsed) : null
   const ongoing = daysElapsed > 0 && daysElapsed < daysTotal
-  const forecastSpendingOre = ongoing ? Math.round((spentSoFar * daysTotal) / daysElapsed) + futureSpending : null
+  const forecastSpendingOre = ongoing
+    ? Math.round((variableSoFar * daysTotal) / daysElapsed) + futureSpending + fixedSpending + upcomingFixed
+    : null
 
   return {
     incomeOre: income,
@@ -206,6 +220,8 @@ export function summarize(
     daysTotal,
     avgPerDayOre,
     forecastSpendingOre,
+    fixedSpendingOre: fixedSpending,
+    upcomingFixedOre: ongoing ? upcomingFixed : 0,
     byCategory,
     transactionCount: inPeriod.length,
   }
@@ -226,4 +242,106 @@ export function suggestCategory(
       (m.normalized_name.length >= 3 && q.startsWith(m.normalized_name + ' '))))
     .sort((a, b) => b.use_count - a.use_count)[0]
   return prefix?.default_category_id ?? null
+}
+
+// ============================================================
+// Faste poster
+// ============================================================
+
+export interface RecurringLike {
+  id: string
+  kind: TxKind
+  amount_ore: number
+  category_id: string | null
+  day_of_month: number
+  start_on: string
+  end_on: string | null
+  last_generated_on: string | null
+  is_active: boolean
+}
+
+/** Datoen en fast post faller på i en gitt måned. 31 blir siste dag i korte måneder. */
+export function recurringDateIn(r: Pick<RecurringLike, 'day_of_month'>, year: number, month: number): string {
+  const day = Math.min(r.day_of_month, daysInMonth({ year, month }))
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+/** Faste poster som kommer senere i perioden og ikke er registrert ennå. Samme regler som i databasen. */
+export function upcomingRecurring<R extends RecurringLike>(list: R[], period: Period, today: string): { recurring: R; date: string }[] {
+  const out: { recurring: R; date: string }[] = []
+  for (const r of list) {
+    if (!r.is_active) continue
+    let m = monthOf(today > period.from ? today : period.from)
+    const last = monthOf(period.to)
+    for (let guard = 0; guard < 400 && (m.year < last.year || (m.year === last.year && m.month <= last.month)); guard++) {
+      const d = recurringDateIn(r, m.year, m.month)
+      const alreadyThisMonth = r.last_generated_on !== null && r.last_generated_on.slice(0, 7) >= d.slice(0, 7)
+      if (d > today && d >= period.from && d <= period.to && d >= r.start_on && (!r.end_on || d <= r.end_on) && !alreadyThisMonth) {
+        out.push({ recurring: r, date: d })
+      }
+      m = shiftMonth(m, 1)
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/** Hvor mye kommende faste poster vil øke forbruket i perioden. */
+export function upcomingFixedSpending(list: RecurringLike[], period: Period, today: string): number {
+  return upcomingRecurring(list, period, today)
+    .reduce((sum, o) => sum + KIND_EFFECT[o.recurring.kind].spending * o.recurring.amount_ore, 0)
+}
+
+// ============================================================
+// Sammenligning med forrige måned
+// ============================================================
+
+/**
+ * Samme punkt i forrige måned. Er vi på dag 21 i oktober, sammenlignes det med 1. til 21. september.
+ * Er måneden ferdig, sammenlignes hele måneder. Finnes ikke dagen (31. i en kort måned), brukes siste dag.
+ */
+export function previousComparablePeriod(period: Period, today: string): Period {
+  const cur = monthOf(period.from)
+  const prev = shiftMonth(cur, -1)
+  const prevFrom = `${prev.year}-${String(prev.month).padStart(2, '0')}-01`
+  const prevDays = daysInMonth(prev)
+  let day: number
+  if (today >= period.to) day = prevDays
+  else if (today < period.from) day = 0
+  else day = Math.min(daysBetweenInclusive(period.from, today), prevDays)
+  return { from: prevFrom, to: day === 0 ? shiftDay(prevFrom, -1) : shiftDay(prevFrom, day - 1) }
+}
+
+export interface Comparison {
+  /** Forbruk så langt i år minus forbruk på samme tid forrige måned. Positivt betyr mer i år. */
+  deltaOre: number
+  previousOre: number
+  /** Endring per hovedkategori (null er ukategorisert) */
+  byCategory: Map<string | null, number>
+}
+
+export function compareWithPrevious(current: Summary, previous: Summary): Comparison {
+  const byCategory = new Map<string | null, number>()
+  for (const c of current.byCategory) byCategory.set(c.id, c.amountOre)
+  for (const c of previous.byCategory) byCategory.set(c.id, (byCategory.get(c.id) ?? 0) - c.amountOre)
+  return { deltaOre: current.spendingOre - previous.spendingOre, previousOre: previous.spendingOre, byCategory }
+}
+
+// ============================================================
+// Budsjett
+// ============================================================
+
+/** Hvor mange måneder perioden tilsvarer, for å skalere månedsbudsjett. null betyr at budsjett ikke vises. */
+export function budgetFactor(mode: 'month' | 'year' | 'custom'): number | null {
+  if (mode === 'month') return 1
+  if (mode === 'year') return 12
+  return null
+}
+
+export type BudgetStatus = 'ok' | 'warn' | 'over'
+
+/** Over budsjett, på vei over (med samme tempo), eller innenfor. */
+export function budgetStatus(spentOre: number, budgetOre: number, daysElapsed: number, daysTotal: number): BudgetStatus {
+  if (spentOre > budgetOre) return 'over'
+  if (daysElapsed > 0 && daysElapsed < daysTotal && (spentOre * daysTotal) / daysElapsed > budgetOre) return 'warn'
+  return 'ok'
 }

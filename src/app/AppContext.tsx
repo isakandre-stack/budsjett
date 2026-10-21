@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { applyTheme } from '../lib/theme'
 import type { Session } from '@supabase/supabase-js'
-import { useAccounts, useBootstrap, useCategories, useMerchants, type Account, type Category, type Merchant, type Transaction } from '../lib/api'
+import { generateRecurring, useAccounts, useBootstrap, useBudgets, useCategories, useMerchants, useRecurring, type Account, type Budget, type Category, type Merchant, type Recurring, type Transaction } from '../lib/api'
 import { monthOf, monthPeriod, todayISO, yearPeriod, type Month, type Period } from '../lib/dates'
 
 export type PeriodSel =
@@ -28,6 +29,8 @@ interface Ctx {
   categories: Category[]
   merchants: Merchant[]
   accounts: Account[]
+  budgets: Budget[]
+  recurring: Recurring[]
   catById: Map<string, Category>
   merchantById: Map<string, Merchant>
   period: PeriodSel
@@ -52,6 +55,9 @@ export function AppProvider({ session, children }: { session: Session; children:
   const cats = useCategories(hid)
   const merchants = useMerchants(hid)
   const accounts = useAccounts(hid)
+  const budgets = useBudgets(hid)
+  const recurring = useRecurring(hid)
+  const qc = useQueryClient()
   const [period, setPeriod] = useState<PeriodSel>({ mode: 'month', month: monthOf(todayISO()) })
   const [quickOpen, setQuickOpen] = useState(false)
   const [editor, setEditor] = useState<EditorTarget | null>(null)
@@ -60,8 +66,32 @@ export function AppProvider({ session, children }: { session: Session; children:
   const serverTheme = boot.data?.theme
   useEffect(() => { if (serverTheme) applyTheme(serverTheme) }, [serverTheme])
 
+  // Faste poster som har forfalt registreres når appen åpnes og når den kommer tilbake i forgrunnen
+  useEffect(() => {
+    if (!hid) return
+    let running = false
+    const run = async () => {
+      if (running) return
+      running = true
+      try {
+        const n = await generateRecurring(hid)
+        if (n > 0) await Promise.all([
+          qc.invalidateQueries({ queryKey: ['tx'] }),
+          qc.invalidateQueries({ queryKey: ['recurring'] }),
+          qc.invalidateQueries({ queryKey: ['merchants'] }),
+        ])
+      } catch { /* prøver igjen neste gang */ } finally { running = false }
+    }
+    void run()
+    const onVis = () => { if (document.visibilityState === 'visible') void run() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [hid, qc])
+
   const value = useMemo<Ctx | null>(() => {
     if (!boot.data || !cats.data || !merchants.data || !accounts.data) return null
+    // Budsjett og faste poster skal aldri hindre resten av appen i å vise seg
+    if ((budgets.isPending && !budgets.isError) || (recurring.isPending && !recurring.isError)) return null
     return {
       userId: session.user.id,
       email: session.user.email ?? '',
@@ -71,6 +101,8 @@ export function AppProvider({ session, children }: { session: Session; children:
       categories: cats.data,
       merchants: merchants.data,
       accounts: accounts.data,
+      budgets: budgets.data ?? [],
+      recurring: recurring.data ?? [],
       catById: new Map(cats.data.map((c) => [c.id, c])),
       merchantById: new Map(merchants.data.map((m) => [m.id, m])),
       period,
@@ -80,7 +112,7 @@ export function AppProvider({ session, children }: { session: Session; children:
       editor,
       setEditor,
     }
-  }, [boot.data, cats.data, merchants.data, accounts.data, session, period, quickOpen, editor])
+  }, [boot.data, cats.data, merchants.data, accounts.data, budgets.data, budgets.isPending, budgets.isError, recurring.data, recurring.isPending, recurring.isError, session, period, quickOpen, editor])
 
   const err = boot.error ?? cats.error ?? merchants.error ?? accounts.error
   if (err) {

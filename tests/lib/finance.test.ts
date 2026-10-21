@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { daysInMonth, monthPeriod, shiftMonth, todayISO, yearPeriod, formatDate } from '../../src/lib/dates'
-import { categoryLineFilter, summarize, suggestCategory, txSpending, type CategoryLike, type TxLike, type TxKind } from '../../src/lib/finance'
+import { budgetStatus, categoryLineFilter, compareWithPrevious, previousComparablePeriod, recurringDateIn, summarize, suggestCategory, txSpending, upcomingFixedSpending, upcomingRecurring, type CategoryLike, type RecurringLike, type TxLike, type TxKind } from '../../src/lib/finance'
 
 const cats: CategoryLike[] = [
   { id: 'mat', parent_id: null, name: 'Mat og dagligvarer', color: '#22c55e' },
@@ -205,5 +205,74 @@ describe('kategorifilter på transaksjonslisten', () => {
       const f = categoryLineFilter(c.id ?? 'ingen', cats)
       expect(list.reduce((a, t) => a + txSpending(t, f), 0)).toBe(c.amountOre)
     }
+  })
+})
+
+describe('faste poster i anslaget', () => {
+  it('husleien teller én gang, ikke som dagens tempo', () => {
+    const rent = { ...tx('expense', 1200000, '2026-10-01'), recurring_id: 'r1' }
+    const s = summarize([rent, tx('expense', 10000, '2026-10-05')], cats, oct, '2026-10-10')
+    // 10 000 variabelt over 10 dager gir 31 000, pluss husleien én gang
+    expect(s.forecastSpendingOre).toBe(31000 + 1200000)
+    expect(s.fixedSpendingOre).toBe(1200000)
+  })
+
+  it('legger til faste utgifter som ikke er kommet ennå', () => {
+    const s = summarize([tx('expense', 10000, '2026-10-05')], cats, oct, '2026-10-10', { upcomingFixedOre: 50000 })
+    expect(s.forecastSpendingOre).toBe(31000 + 50000)
+    expect(s.upcomingFixedOre).toBe(50000)
+  })
+})
+
+describe('kommende faste poster', () => {
+  const base: RecurringLike = {
+    id: 'r', kind: 'expense', amount_ore: 14900, category_id: null, day_of_month: 25,
+    start_on: '2026-01-01', end_on: null, last_generated_on: '2026-09-25', is_active: true,
+  }
+  it('finner det som gjenstår i måneden', () => {
+    expect(upcomingRecurring([base], oct, '2026-10-21').map((o) => o.date)).toEqual(['2026-10-25'])
+    expect(upcomingRecurring([base], oct, '2026-10-25')).toEqual([])
+  })
+  it('hopper over pause, sluttdato og det som alt er registrert', () => {
+    expect(upcomingRecurring([{ ...base, is_active: false }], oct, '2026-10-21')).toEqual([])
+    expect(upcomingRecurring([{ ...base, end_on: '2026-10-20' }], oct, '2026-10-21')).toEqual([])
+    expect(upcomingRecurring([{ ...base, last_generated_on: '2026-10-01' }], oct, '2026-10-21')).toEqual([])
+  })
+  it('inntekt gir ikke forbruk', () => {
+    expect(upcomingFixedSpending([base, { ...base, id: 'l', kind: 'income', amount_ore: 3000000 }], oct, '2026-10-21')).toBe(14900)
+  })
+  it('31. blir siste dag i februar', () => {
+    expect(recurringDateIn({ day_of_month: 31 }, 2026, 2)).toBe('2026-02-28')
+    expect(recurringDateIn({ day_of_month: 31 }, 2028, 2)).toBe('2028-02-29')
+  })
+})
+
+describe('sammenligning med forrige måned', () => {
+  it('samme dag i forrige måned', () => {
+    expect(previousComparablePeriod(oct, '2026-10-21')).toEqual({ from: '2026-09-01', to: '2026-09-21' })
+    expect(previousComparablePeriod(oct, '2026-10-31')).toEqual({ from: '2026-09-01', to: '2026-09-30' })
+    expect(previousComparablePeriod(oct, '2026-11-15')).toEqual({ from: '2026-09-01', to: '2026-09-30' })
+    const mar = monthPeriod({ year: 2026, month: 3 })
+    expect(previousComparablePeriod(mar, '2026-03-30')).toEqual({ from: '2026-02-01', to: '2026-02-28' })
+    const jan = monthPeriod({ year: 2026, month: 1 })
+    expect(previousComparablePeriod(jan, '2026-01-10')).toEqual({ from: '2025-12-01', to: '2025-12-10' })
+  })
+  it('regner forskjell totalt og per kategori', () => {
+    const cur = summarize([tx('expense', 30000, '2026-10-02', 'kiosk'), tx('expense', 5000, '2026-10-03', 'shopping')], cats, oct, '2026-10-21')
+    const sep = { from: '2026-09-01', to: '2026-09-21' }
+    const prev = summarize([tx('expense', 20000, '2026-09-02', 'dagligvarer'), tx('expense', 8000, '2026-09-04', 'shopping')], cats, sep, '2026-10-21')
+    const c = compareWithPrevious(cur, prev)
+    expect(c.deltaOre).toBe(35000 - 28000)
+    expect(c.byCategory.get('mat')).toBe(10000)
+    expect(c.byCategory.get('shopping')).toBe(-3000)
+  })
+})
+
+describe('budsjettstatus', () => {
+  it('over, på vei over, og innenfor', () => {
+    expect(budgetStatus(410000, 400000, 10, 31)).toBe('over')
+    expect(budgetStatus(200000, 400000, 10, 31)).toBe('warn')
+    expect(budgetStatus(100000, 400000, 10, 31)).toBe('ok')
+    expect(budgetStatus(390000, 400000, 31, 31)).toBe('ok')
   })
 })

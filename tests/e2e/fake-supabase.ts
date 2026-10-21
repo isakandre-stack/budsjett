@@ -105,7 +105,7 @@ async function rest(req: IncomingMessage, res: ServerResponse, url: URL) {
     const fn = path.slice(4)
     const args = await body(req)
     const keys = Object.keys(args)
-    const vals = keys.map((k) => (k === 'p_splits' ? JSON.stringify(args[k]) : args[k]))
+    const vals = keys.map((k) => (k === 'p_splits' || k === 'p_rows' ? JSON.stringify(args[k]) : args[k]))
     const sql = `select to_json(public.${ident(fn)}(${keys.map((k, i) => `${ident(k)} => $${i + 1}`).join(', ')})) as r`
     const r = await asRequester(req, (q) => q(sql, vals))
     return send(res, 200, r.rows[0].r)
@@ -129,9 +129,15 @@ async function rest(req: IncomingMessage, res: ServerResponse, url: URL) {
     const b = await body(req)
     const rows = Array.isArray(b) ? b : [b]
     await asRequester(req, async (q) => {
+      // Upsert som i Supabase: on_conflict=kolonner og Prefer: resolution=merge-duplicates
+      const conflict = p.get('on_conflict')
+      const merge = conflict && String(req.headers.prefer ?? '').includes('merge-duplicates')
       for (const row of rows) {
         const keys = Object.keys(row)
-        await q(`insert into public.${table} (${keys.map(ident).join(', ')}) values (${keys.map((_, i) => `$${i + 1}`).join(', ')})`, keys.map((k) => row[k]))
+        const upsert = merge
+          ? ` on conflict (${conflict.split(',').map(ident).join(', ')}) do update set ${keys.map((k) => `${ident(k)} = excluded.${ident(k)}`).join(', ')}`
+          : ''
+        await q(`insert into public.${table} (${keys.map(ident).join(', ')}) values (${keys.map((_, i) => `$${i + 1}`).join(', ')})${upsert}`, keys.map((k) => row[k]))
       }
     })
     return send(res, 201, wantReturn ? rows : undefined)

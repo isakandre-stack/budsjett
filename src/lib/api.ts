@@ -48,8 +48,30 @@ export interface Transaction {
   note: string | null
   tags: string[]
   refund_of_id: string | null
+  recurring_id: string | null
   created_at: string
   transaction_splits: Split[]
+}
+
+export interface Budget {
+  id: string
+  category_id: string
+  amount_ore: number
+}
+
+export interface Recurring {
+  id: string
+  kind: TxKind
+  amount_ore: number
+  merchant: string
+  category_id: string | null
+  account_id: string | null
+  day_of_month: number
+  start_on: string
+  end_on: string | null
+  last_generated_on: string | null
+  is_active: boolean
+  note: string | null
 }
 
 function check<T>(res: { data: T; error: unknown }): T {
@@ -104,7 +126,7 @@ export function useAccounts(householdId: string | undefined) {
 }
 
 const TX_COLUMNS =
-  'id, kind, amount_ore, occurred_on, merchant_id, category_id, account_id, to_account_id, description, note, tags, refund_of_id, created_at, transaction_splits(id, category_id, amount_ore)'
+  'id, kind, amount_ore, occurred_on, merchant_id, category_id, account_id, to_account_id, description, note, tags, refund_of_id, recurring_id, created_at, transaction_splits(id, category_id, amount_ore)'
 
 /** Henter alle transaksjoner i perioden, side for side, så ingenting faller bort ved mange rader. */
 export function useTransactions(householdId: string | undefined, period: Period) {
@@ -249,5 +271,125 @@ export function useSetTheme() {
     mutationFn: async ({ userId, theme }: { userId: string; theme: 'system' | 'light' | 'dark' }) =>
       check(await supabase.from('user_preferences').update({ theme }).eq('user_id', userId)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['bootstrap'] }),
+  })
+}
+
+// ============================================================
+// Budsjett
+// ============================================================
+
+export function useBudgets(householdId: string | undefined) {
+  return useQuery({
+    queryKey: ['budgets', householdId],
+    enabled: !!householdId,
+    queryFn: async () =>
+      check(await supabase.from('budgets').select('id, category_id, amount_ore').eq('household_id', householdId!)) as Budget[],
+  })
+}
+
+export function useBudgetMutations(householdId: string | undefined) {
+  const qc = useQueryClient()
+  const done = () => qc.invalidateQueries({ queryKey: ['budgets'] })
+  return {
+    set: useMutation({
+      mutationFn: async ({ categoryId, amountOre }: { categoryId: string; amountOre: number | null }) => {
+        if (amountOre === null) {
+          check(await supabase.from('budgets').delete().eq('household_id', householdId!).eq('category_id', categoryId))
+        } else {
+          check(await supabase.from('budgets').upsert(
+            { household_id: householdId, category_id: categoryId, amount_ore: amountOre, updated_at: new Date().toISOString() },
+            { onConflict: 'household_id,category_id' }))
+        }
+      },
+      onSuccess: done,
+    }),
+  }
+}
+
+// ============================================================
+// Faste poster
+// ============================================================
+
+const RECURRING_COLUMNS = 'id, kind, amount_ore, merchant, category_id, account_id, day_of_month, start_on, end_on, last_generated_on, is_active, note'
+
+export function useRecurring(householdId: string | undefined) {
+  return useQuery({
+    queryKey: ['recurring', householdId],
+    enabled: !!householdId,
+    queryFn: async () =>
+      check(await supabase.from('recurring').select(RECURRING_COLUMNS).eq('household_id', householdId!)
+        .order('day_of_month').order('merchant')) as Recurring[],
+  })
+}
+
+export type RecurringInput = Omit<Recurring, 'id' | 'last_generated_on'>
+
+/** Registrerer faste poster som har forfalt. Kjøres når appen åpnes og når den kommer tilbake i forgrunnen. */
+export async function generateRecurring(householdId: string): Promise<number> {
+  return check(await supabase.rpc('generate_recurring', { p_household_id: householdId })) as number
+}
+
+export function useRecurringMutations(householdId: string | undefined) {
+  const qc = useQueryClient()
+  // Nye eller endrede faste poster kan gi transaksjoner med en gang
+  const done = async () => {
+    if (householdId) await generateRecurring(householdId).catch(() => 0)
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['recurring'] }),
+      qc.invalidateQueries({ queryKey: ['tx'] }),
+      qc.invalidateQueries({ queryKey: ['merchants'] }),
+    ])
+  }
+  return {
+    create: useMutation({
+      mutationFn: async (r: RecurringInput) =>
+        check(await supabase.from('recurring').insert({ ...r, household_id: householdId })),
+      onSuccess: done,
+    }),
+    update: useMutation({
+      mutationFn: async ({ id, ...patch }: { id: string } & Partial<RecurringInput>) =>
+        check(await supabase.from('recurring').update(patch).eq('id', id)),
+      onSuccess: done,
+    }),
+    remove: useMutation({
+      mutationFn: async (id: string) => { check(await supabase.from('recurring').delete().eq('id', id)) },
+      onSuccess: done,
+    }),
+  }
+}
+
+// ============================================================
+// Import fra banken
+// ============================================================
+
+export interface ImportRow {
+  key: string
+  date: string
+  amount_ore: number
+  kind: 'expense' | 'income' | 'refund' | 'saving'
+  merchant: string
+  category_id: string | null
+  note: string
+}
+
+/** Transaksjoner i perioden, brukt til å kjenne igjen det som er importert eller ført for hånd før. */
+export async function fetchExistingForImport(householdId: string, from: string, to: string) {
+  const all: { id: string; amount_ore: number; occurred_on: string; import_key: string | null }[] = []
+  for (let offset = 0; ; offset += 1000) {
+    const rows = check(await supabase.from('transactions').select('id, amount_ore, occurred_on, import_key')
+      .eq('household_id', householdId).gte('occurred_on', from).lte('occurred_on', to)
+      .order('occurred_on').order('id').range(offset, offset + 999)) as typeof all
+    all.push(...rows)
+    if (rows.length < 1000) break
+  }
+  return all
+}
+
+export function useImportTransactions() {
+  const invalidate = useInvalidateMoney()
+  return useMutation({
+    mutationFn: async ({ householdId, accountId, rows }: { householdId: string; accountId: string | null; rows: ImportRow[] }) =>
+      check(await supabase.rpc('import_transactions', { p_household_id: householdId, p_account_id: accountId, p_rows: rows })) as number,
+    onSuccess: invalidate,
   })
 }

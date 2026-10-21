@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { periodOf, useApp } from '../app/AppContext'
 import { CategorySelect } from '../components/CategorySelect'
 import { PeriodPicker } from '../components/PeriodPicker'
@@ -72,7 +72,10 @@ export function Transactions() {
     <div className="mx-auto max-w-3xl px-4 md:px-8 pt-4 md:pt-8">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold tracking-tight">Transaksjoner</h1>
-        <PeriodPicker />
+        <div className="flex items-center gap-1">
+          <Link to="/import" className="btn btn-ghost text-sm">Importer</Link>
+          <PeriodPicker align="right" />
+        </div>
       </header>
 
       <div className="mt-4 space-y-2">

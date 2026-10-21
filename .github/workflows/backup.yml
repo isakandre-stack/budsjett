@@ -1,0 +1,47 @@
+name: Nattlig backup
+
+# Tar en kryptert kopi av databasen hver natt. Kjøringen holder også
+# Supabase-prosjektet aktivt, så det ikke pauses etter en uke uten bruk.
+on:
+  schedule:
+    - cron: '17 1 * * *' # 03:17 norsk sommertid, 02:17 vintertid
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Installer pg_dump 17
+        run: |
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Ta backup og krypter
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DB_URL" ] || [ -z "$PASSPHRASE" ]; then
+            echo "Mangler SUPABASE_DB_URL eller BACKUP_PASSPHRASE under Settings > Secrets." && exit 1
+          fi
+          umask 077
+          file="budsjett-$(date -u +%Y-%m-%d).dump"
+          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" --format=custom --no-owner --no-privileges \
+            --schema=public --file="$file"
+          # Krypteres før den forlater maskinen. Uten passordet er filen ulesbar.
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$PASSPHRASE" \
+            --symmetric --cipher-algo AES256 --output "$file.gpg" "$file"
+          shred -u "$file"
+          ls -la "$file.gpg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ github.run_id }}
+          path: '*.gpg'
+          retention-days: 30
+          if-no-files-found: error

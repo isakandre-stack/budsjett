@@ -49,16 +49,21 @@ describe('tilgang', () => {
     await expect(asUser(db, null, (q) => q('select * from transactions'))).rejects.toThrow(/permission denied/)
   })
 
-  it('uten tofaktor (aal1) er alle data skjult og skriving blokkert', async () => {
+  it('innlogget bruker uten tofaktor (aal1) får tilgang til egne data', async () => {
     await asUser(db, ISAK, async (q) => {
       const r = await q('select * from categories')
-      expect(r.rows).toHaveLength(0)
+      expect(r.rows.length).toBeGreaterThan(0)
     }, 'aal1')
-    await expect(
-      asUser(db, ISAK, (q) =>
-        q(`insert into transactions (household_id, kind, amount_ore, occurred_on) values ($1, 'expense', 100, '2026-10-01')`, [isakHousehold]),
-      'aal1'),
-    ).rejects.toThrow(/row-level security/)
+    await asUser(db, ISAK, (q) =>
+      q(`insert into transactions (household_id, kind, amount_ore, occurred_on) values ($1, 'expense', 100, '2026-10-01')`, [isakHousehold]),
+    'aal1')
+  })
+
+  it('aal1 ser fortsatt ikke andres data', async () => {
+    await asUser(db, ANNEN, async (q) => {
+      const r = await q<{ n: number }>('select count(*)::int as n from transactions where household_id = $1', [isakHousehold])
+      expect(r.rows[0].n).toBe(0)
+    }, 'aal1')
   })
 
   it('en bruker ser aldri en annen brukers data', async () => {

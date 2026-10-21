@@ -233,7 +233,7 @@ function Security() {
     <Section id="sikkerhet" title="Innlogging og sikkerhet">
       <div className="rounded-xl bg-surface p-4 space-y-3">
         <p>Logget inn som <span className="font-medium">{email}</span></p>
-        <p className="text-sm text-muted">Tofaktor er på. Uten koden fra autentiseringsappen kommer ingen til dataene dine, heller ikke med riktig passord.</p>
+        <p className="text-sm text-muted">Bare du har bruker. Ingen kan registrere seg selv, og databasen viser bare dine egne data.</p>
         <div className="flex flex-wrap gap-2">
           <button className="btn btn-ghost bg-sunken" onClick={() => supabase.auth.signOut({ scope: 'local' })}>Logg ut</button>
           <button className="btn btn-ghost bg-sunken" onClick={() => supabase.auth.signOut({ scope: 'global' })}>Logg ut på alle enheter</button>

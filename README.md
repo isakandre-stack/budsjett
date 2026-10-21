@@ -10,13 +10,13 @@ Appen er helt adskilt fra Dialr: eget repo, egen Supabase-database, egne brukere
 Telefon / PC  ──>  GitHub Pages (statisk app, gratis)
                         │
                         └──>  Supabase (eget prosjekt, gratis)
-                              innlogging + tofaktor + Postgres med Row Level Security
+                              innlogging + Postgres med Row Level Security
 ```
 
 Appen er statisk. All beskyttelse ligger i databasen:
 
 - Ingen åpen registrering. Den eneste brukeren er den du oppretter selv.
-- Tofaktor er påkrevd. Databasen gir ingen data til en økt som ikke har bekreftet tofaktorkode (`aal2`), selv med riktig passord.
+- Bruk et langt passord du ikke bruker andre steder. Det er det som beskytter innloggingen.
 - Row Level Security på alle tabeller. Anonyme får ingen tilgang i det hele tatt.
 - Nøkkelen i appen er den offentlige anon/publishable-nøkkelen. Den gir ingenting uten innlogging. Deploy stopper hvis du ved et uhell legger inn den hemmelige nøkkelen.
 - Appen caches for offline-start, men økonomidata lagres aldri i cachen.
@@ -34,7 +34,7 @@ Koden ligger offentlig (gratis GitHub Pages krever det), men dataene dine ligger
 4. **Authentication > Users > Add user > Create new user**: skriv e-post og et langt passord, huk av *Auto Confirm User*. Husholdning, konto og standardkategorier lages automatisk.
 5. **Project Settings > API** (eller *Connect*): kopier *Project URL* og den offentlige nøkkelen (`anon` eller `publishable`). Aldri `service_role` eller `secret`.
 
-Tofaktor med autentiseringsapp (TOTP) er på som standard i Supabase. Første gang du logger inn blir du bedt om å sette det opp.
+Etter at `0001_fase1.sql` er kjørt, kjør også `0002_fjern_tofaktor.sql` på samme måte. Appen bruker bare e-post og passord.
 
 ### 2. GitHub
 
@@ -76,7 +76,7 @@ npm run dev                  # http://localhost:5173/budsjett/
 npm test                     # økonomilogikk + databasetester
 ```
 
-Databasetestene kjører den ekte migrasjonen i Postgres (PGlite) og sjekker blant annet at én bruker aldri ser en annens data, at ingenting er tilgjengelig uten tofaktor, og at splitt alltid summerer riktig.
+Databasetestene kjører den ekte migrasjonen i Postgres (PGlite) og sjekker blant annet at én bruker aldri ser en annens data, at anonyme ikke får tilgang, og at splitt alltid summerer riktig.
 
 `tests/e2e/fake-supabase.ts` er en testserver som etterligner Supabase-API-et mot samme database, brukt til å klikke gjennom appen i nettleser. Den er aldri med i bygget.
 
@@ -99,6 +99,6 @@ All logikk ligger i `src/lib/finance.ts` og er testet i `tests/lib/`.
 
 ## Faser
 
-**Fase 1 (denne):** innlogging med tofaktor, database, kategorier med underkategorier, hurtigregistrering med kategoriforslag, detaljert registrering med splitt, refusjon koblet til kjøp, kontoer og overføringer, transaksjonslogg med søk og filter, dashboard med prognose, lys og mørk modus, PWA.
+**Fase 1 (denne):** innlogging, database, kategorier med underkategorier, hurtigregistrering med kategoriforslag, detaljert registrering med splitt, refusjon koblet til kjøp, kontoer og overføringer, transaksjonslogg med søk og filter, dashboard med prognose, lys og mørk modus, PWA.
 
 **Neste:** budsjetter per kategori, faste utgifter, sparemål, analyseside, CSV-import og -eksport, kvitteringer, fellesøkonomi. Datamodellen har allerede husholdning og deling på plass, så dette blir utvidelser og ikke ombygging.

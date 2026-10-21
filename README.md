@@ -34,7 +34,7 @@ Koden ligger offentlig (gratis GitHub Pages krever det), men dataene dine ligger
 4. **Authentication > Users > Add user > Create new user**: skriv e-post og et langt passord, huk av *Auto Confirm User*. Husholdning, konto og standardkategorier lages automatisk.
 5. **Project Settings > API** (eller *Connect*): kopier *Project URL* og den offentlige nøkkelen (`anon` eller `publishable`). Aldri `service_role` eller `secret`.
 
-Etter at `0001_fase1.sql` er kjørt, kjør også `0002_fjern_tofaktor.sql` på samme måte. Appen bruker bare e-post og passord.
+Etter at `0001_fase1.sql` er kjørt, kjør også `0002_fjern_tofaktor.sql` og `0003_rettelser.sql` på samme måte, i den rekkefølgen. Appen bruker bare e-post og passord.
 
 ### 2. GitHub
 

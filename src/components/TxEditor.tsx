@@ -15,7 +15,7 @@ interface SplitRow { category_id: string | null; amount: string }
 
 export function TxEditor() {
   const app = useApp()
-  const { editor, setEditor, categories, accounts, merchantById } = app
+  const { editor, setEditor, categories, accounts, merchantById, catById } = app
   const save = useSaveTransaction()
   const del = useDeleteTransaction()
   const toast = useToast()
@@ -49,7 +49,10 @@ export function TxEditor() {
         : draft?.merchantName ?? '',
     )
     setCategoryId(src.category_id ?? null)
-    setAccountId(src.account_id ?? app.defaultAccountId)
+    // En eksisterende transaksjon beholder kontoen sin, også når den er uten konto.
+    // Nye får standardkontoen, men aldri en arkivert konto.
+    const def = app.defaultAccountId
+    setAccountId(existing ? existing.account_id : draft?.account_id !== undefined ? draft.account_id : def)
     setToAccountId(src.to_account_id ?? null)
     setNote(src.note ?? '')
     setTags((src.tags ?? []).join(', '))
@@ -67,6 +70,9 @@ export function TxEditor() {
   const splitSum = splitOre.reduce<number>((a, b) => a + (b ?? 0), 0)
   const splitRemaining = (amountOre ?? 0) - splitSum
   const catKind = kind === 'income' ? 'income' : 'expense'
+  // Splitt finnes bare for utgift og refusjon. Bytter du til en annen type, skal skjulte splittlinjer ikke lagres.
+  const canSplit = kind === 'expense' || kind === 'refund'
+  const useSplit = splitOn && canSplit
   const activeAccounts = accounts.filter((a) => !a.is_archived || a.id === accountId || a.id === toAccountId)
 
   function validate(): string | null {
@@ -74,7 +80,7 @@ export function TxEditor() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'Velg en dato.'
     if (kind === 'transfer' && (!accountId || !toAccountId)) return 'En overføring trenger både fra- og til-konto.'
     if (kind === 'transfer' && accountId === toAccountId) return 'Fra- og til-konto må være forskjellige.'
-    if (splitOn) {
+    if (useSplit) {
       if (splits.length < 2) return 'Splitt må ha minst to linjer.'
       if (splitOre.some((x) => x === null)) return 'Alle splittlinjer trenger et gyldig beløp.'
       if (splitRemaining !== 0) return `Splittene må bli ${formatOre(amountOre)} til sammen. Det mangler ${formatOre(splitRemaining)}.`
@@ -87,7 +93,7 @@ export function TxEditor() {
     const v = validate()
     if (v) { setError(v); return }
     setError(null)
-    const splitList: Split[] = splitOn ? splits.map((s, i) => ({ category_id: s.category_id, amount_ore: splitOre[i]! })) : []
+    const splitList: Split[] = useSplit ? splits.map((s, i) => ({ category_id: s.category_id, amount_ore: splitOre[i]! })) : []
     try {
       await save.mutateAsync({
         id: existing?.id ?? null,
@@ -96,7 +102,7 @@ export function TxEditor() {
         amountOre: amountOre!,
         occurredOn: date,
         merchant,
-        categoryId: splitOn ? (splits[0]?.category_id ?? null) : categoryId,
+        categoryId: useSplit ? (splits[0]?.category_id ?? null) : categoryId,
         accountId,
         toAccountId,
         note,
@@ -131,8 +137,20 @@ export function TxEditor() {
     if (!existing) return
     setEditor({
       type: 'new',
-      draft: { kind: 'refund', amount_ore: existing.amount_ore, occurred_on: todayISO(), category_id: existing.category_id, refund_of_id: existing.id, merchantName: merchant },
+      draft: {
+        kind: 'refund', amount_ore: existing.amount_ore, occurred_on: todayISO(), category_id: existing.category_id,
+        account_id: existing.account_id, refund_of_id: existing.id, merchantName: merchant,
+        // Et delt kjøp refunderes fordelt på de samme kategoriene
+        transaction_splits: existing.transaction_splits.map(({ category_id, amount_ore }) => ({ category_id, amount_ore })),
+      },
     })
+  }
+
+  function changeKind(k: TxKind) {
+    setKind(k)
+    // En utgiftskategori hører ikke hjemme på en inntekt, og omvendt
+    const c = categoryId ? catById.get(categoryId) : undefined
+    if (c && c.kind !== (k === 'income' ? 'income' : 'expense')) setCategoryId(null)
   }
 
   function toggleSplit() {
@@ -153,7 +171,7 @@ export function TxEditor() {
         <div className="grid grid-cols-2 gap-3">
           <label className="block col-span-2 sm:col-span-1">
             <span className="text-sm text-muted">Type</span>
-            <select className="field mt-1" value={kind} onChange={(e) => setKind(e.target.value as TxKind)}>
+            <select className="field mt-1" value={kind} onChange={(e) => changeKind(e.target.value as TxKind)}>
               {KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
             </select>
           </label>
@@ -182,14 +200,14 @@ export function TxEditor() {
           </label>
         </div>
 
-        {!splitOn && (
+        {!useSplit && (
           <label className="block">
             <span className="text-sm text-muted">Kategori</span>
             <div className="mt-1"><CategorySelect categories={categories} kind={catKind} value={categoryId} onChange={setCategoryId} /></div>
           </label>
         )}
 
-        {(kind === 'expense' || kind === 'refund') && (
+        {canSplit && (
           <div>
             <button type="button" className="text-sm font-semibold text-accent underline underline-offset-2" onClick={toggleSplit}>
               {splitOn ? 'Bruk én kategori' : 'Del på flere kategorier'}

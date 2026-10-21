@@ -76,3 +76,36 @@ describe('parseQuickEntry', () => {
     expect(parseQuickEntry(input)).toBeNull()
   })
 })
+
+describe('parseQuickEntry, rettede feil', () => {
+  it.each([
+    ['59 7-Eleven', 5900, '7-Eleven'],
+    ['99 3T', 9900, '3T'],
+    ['249,- Kiwi', 24900, 'Kiwi'],
+    ['50 kroner Kiwi', 5000, 'Kiwi'],
+    ['1 249 REMA', 124900, 'REMA'],
+    ['2 300 kr XXL', 230000, 'XXL'],
+    ['12 pizza', 1200, 'pizza'],
+    ['249 Kremmerhuset', 24900, 'Kremmerhuset'],
+  ])('%s', (input, ore, merchant) => {
+    expect(parseQuickEntry(input)).toEqual({ amountOre: ore, merchant, income: false })
+  })
+
+  it('en kjent butikk med tall i navnet er ikke et beløp', () => {
+    const known = (n: string) => n === 'rema 1000'
+    // Trykk på "REMA 1000" under Nylig brukt skal ikke lagre 1000 kroner hos REMA
+    expect(parseQuickEntry('REMA 1000 ', known)).toBeNull()
+    expect(parseQuickEntry('REMA 1000 249', known)).toEqual({ amountOre: 24900, merchant: 'REMA 1000', income: false })
+    expect(parseQuickEntry('249 REMA 1000', known)).toEqual({ amountOre: 24900, merchant: 'REMA 1000', income: false })
+    // Ukjent butikk tolkes som før
+    expect(parseQuickEntry('Kiwi 1000', known)).toEqual({ amountOre: 100000, merchant: 'Kiwi', income: false })
+  })
+})
+
+describe('formatOre, rettede feil', () => {
+  it('viser aldri minus null', () => {
+    expect(formatOre(-40, { decimals: 'never' })).toBe('0 kr')
+    expect(formatOre(40, { decimals: 'never', sign: true })).toBe('0 kr')
+    expect(formatOre(-60, { decimals: 'never' })).toBe('−1 kr')
+  })
+})

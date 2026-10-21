@@ -152,6 +152,20 @@ describe('hurtigregistrering og butikker', () => {
     })
   })
 
+  it('teller butikken som brukt også uten kategori, og glemmer ikke kategorien den husker', async () => {
+    const mat = await categoryId(ISAK, 'Dagligvarer')
+    await asUser(db, ISAK, async (q) => {
+      await q(`select quick_add($1, 'expense', 10000, 'Bunnpris', null, '2026-10-06')`, [isakHousehold])
+      let m = await q<{ use_count: number; default_category_id: string | null }>(`select use_count, default_category_id from merchants where normalized_name = 'bunnpris'`)
+      expect(m.rows[0].use_count).toBe(1)
+      await q(`select quick_add($1, 'expense', 10000, 'Bunnpris', $2, '2026-10-07')`, [isakHousehold, mat])
+      await q(`select quick_add($1, 'expense', 10000, 'Bunnpris', null, '2026-10-08')`, [isakHousehold])
+      m = await q(`select use_count, default_category_id from merchants where normalized_name = 'bunnpris'`)
+      expect(m.rows[0].use_count).toBe(3)
+      expect(m.rows[0].default_category_id).toBe(mat)
+    })
+  })
+
   it('avviser null og negative beløp', async () => {
     for (const amount of [0, -100]) {
       await expect(asUser(db, ISAK, (q) =>
@@ -250,5 +264,11 @@ describe('regler for transaksjonstyper', () => {
     const sub = await categoryId(ISAK, 'Dagligvarer')
     await expect(asUser(db, ISAK, (q) =>
       q(`insert into categories (household_id, parent_id, name) values ($1, $2, 'For dypt')`, [isakHousehold, sub]))).rejects.toThrow(/ett nivå/)
+  })
+  it('en hovedkategori med underkategorier kan ikke flyttes inn under en annen', async () => {
+    const mat = await categoryId(ISAK, 'Mat og dagligvarer')
+    const shopping = await categoryId(ISAK, 'Shopping')
+    await expect(asUser(db, ISAK, (q) =>
+      q(`update categories set parent_id = $1 where id = $2`, [shopping, mat]))).rejects.toThrow(/ett nivå/)
   })
 })

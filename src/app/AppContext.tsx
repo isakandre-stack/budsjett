@@ -66,7 +66,8 @@ export function AppProvider({ session, children }: { session: Session; children:
       userId: session.user.id,
       email: session.user.email ?? '',
       householdId: boot.data.householdId,
-      defaultAccountId: boot.data.defaultAccountId,
+      // En arkivert konto skal aldri brukes som standard for nye kjøp
+      defaultAccountId: accounts.data.some((a) => a.id === boot.data.defaultAccountId && !a.is_archived) ? boot.data.defaultAccountId : null,
       categories: cats.data,
       merchants: merchants.data,
       accounts: accounts.data,

@@ -6,7 +6,7 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 export const configured = Boolean(url && anonKey)
 
 // Anon-nøkkelen er offentlig av natur. All beskyttelse ligger i innlogging,
-// tofaktor og Row Level Security i databasen.
+// og Row Level Security i databasen.
 export const supabase = createClient(url ?? 'http://localhost', anonKey ?? 'missing', {
   auth: {
     persistSession: true,
@@ -21,7 +21,6 @@ export function errorMessage(e: unknown): string {
   const msg = typeof e === 'object' && e && 'message' in e ? String((e as { message: unknown }).message) : String(e)
   if (/summerer ikke/.test(msg)) return 'Splittene må til sammen bli like mye som beløpet.'
   if (/Invalid login credentials/i.test(msg)) return 'Feil e-post eller passord.'
-  if (/Invalid TOTP|invalid.*code/i.test(msg)) return 'Koden stemmer ikke. Prøv den neste koden i appen.'
   if (/row-level security|permission denied/i.test(msg)) return 'Du har ikke tilgang til dette. Logg inn på nytt.'
   if (/Failed to fetch|NetworkError/i.test(msg)) return 'Fikk ikke kontakt med serveren. Sjekk nettet og prøv igjen.'
   if (/categories_household_id_parent_id_name_key|duplicate key/i.test(msg)) return 'Det finnes allerede en med samme navn.'

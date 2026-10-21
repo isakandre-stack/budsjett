@@ -33,7 +33,8 @@ export function QuickAdd() {
     }
   }, [quickOpen])
 
-  const parsed = parseQuickEntry(text)
+  const known = useMemo(() => new Set(merchants.map((m) => m.normalized_name)), [merchants])
+  const parsed = parseQuickEntry(text, (n) => known.has(n))
   const kind = parsed?.income ? 'income' : 'expense'
   // Først hva du har brukt hos samme butikk før, ellers en kategori med samme navn (for eksempel "Lønn")
   const byName = parsed?.merchant
@@ -62,7 +63,13 @@ export function QuickAdd() {
       setQuickOpen(false)
       toast({
         text: `Lagret ${formatOre(parsed.amountOre)}${parsed.merchant ? ` hos ${parsed.merchant}` : ''}`,
-        action: { label: 'Angre', run: () => del.mutate(tx.id) },
+        action: {
+          label: 'Angre',
+          run: () => del.mutate(tx.id, {
+            onSuccess: () => toast({ text: 'Registreringen er angret' }),
+            onError: (e) => toast({ text: errorMessage(e), tone: 'error' }),
+          }),
+        },
       })
     } catch (e) {
       setError(errorMessage(e))
@@ -101,7 +108,7 @@ export function QuickAdd() {
 
         {!text && recentMerchants.length > 0 && (
           <div className="mt-4">
-            <p className="text-sm text-muted mb-2">Nylig brukt</p>
+            <p className="text-sm text-muted mb-2">Mest brukt</p>
             <div className="flex flex-wrap gap-2">
               {recentMerchants.map((m) => (
                 <button type="button" key={m.id} className="rounded-full bg-sunken px-3 py-1.5 text-sm"

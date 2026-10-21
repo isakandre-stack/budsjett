@@ -60,7 +60,8 @@ export function formatOre(ore: number, opts: { sign?: boolean; decimals?: 'auto'
   const grouped = String(kroner).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
   const showDec = decimals === 'always' || (decimals === 'auto' && rest !== 0)
   const body = showDec ? `${grouped},${String(rest).padStart(2, '0')}` : grouped
-  const prefix = neg ? '−' : sign && ore > 0 ? '+' : ''
+  // Et beløp som rundes til null skal ikke vises som "−0 kr"
+  const prefix = neg && abs > 0 ? '−' : sign && ore > 0 && abs > 0 ? '+' : ''
   return `${prefix}${body} kr`
 }
 
@@ -80,9 +81,12 @@ export interface QuickEntry {
 
 /**
  * "249 REMA" -> { amountOre: 24900, merchant: "REMA" }
- * Støtter også "REMA 249", "1 249,50 Elkjøp", "+25000 Lønn" og bare "249".
+ * Støtter også "REMA 249", "1 249,50 Elkjøp", "249,- Kiwi", "59 7-Eleven", "+25000 Lønn" og bare "249".
+ *
+ * isKnownMerchant brukes for butikker med tall i navnet: "REMA 1000" alene er en butikk
+ * du har brukt før, ikke 1000 kroner hos REMA.
  */
-export function parseQuickEntry(input: string): QuickEntry | null {
+export function parseQuickEntry(input: string, isKnownMerchant?: (normalized: string) => boolean): QuickEntry | null {
   const s = input.trim().replace(/\s+/g, ' ')
   if (!s) return null
   let income = false
@@ -91,16 +95,18 @@ export function parseQuickEntry(input: string): QuickEntry | null {
     income = true
     rest = rest.slice(1).trim()
   }
+  if (isKnownMerchant?.(normalizeMerchant(rest))) return null
 
-  // Beløp først: tall (med mellomrom som tusenskille) og så tekst som ikke starter med tall.
-  const lead = rest.match(/^(\d[\d .,]*?)(?:\s?(?:kr|nok))?(?:\s+(\D.*))?$/i)
+  // Beløp først. Mellomrom som tusenskille godtas bare i grupper på tre ("1 249"),
+  // slik at butikker som starter med tall ("59 7-Eleven", "99 3T") fungerer.
+  const lead = rest.match(/^(\d{1,3}(?: \d{3})+(?:[.,]\d{1,2})?|\d[\d.,]*)(?:\s?(?:kr|kroner|nok|,-))?(?:\s+(.+))?$/i)
   if (lead) {
     const ore = parseAmountToOre(lead[1])
     if (ore !== null) return { amountOre: ore, merchant: (lead[2] ?? '').trim(), income }
   }
 
   // Beløp sist: "REMA 249" eller "Rema 1000 249,90"
-  const trail = rest.match(/^(.*\S)\s+(\d[\d.,]*)(?:\s?(?:kr|nok))?$/i)
+  const trail = rest.match(/^(.*\S)\s+(\d[\d.,]*)(?:\s?(?:kr|kroner|nok|,-))?$/i)
   if (trail && !income) {
     const ore = parseAmountToOre(trail[2])
     if (ore !== null) return { amountOre: ore, merchant: trail[1].trim(), income }

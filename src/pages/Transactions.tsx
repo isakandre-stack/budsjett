@@ -6,7 +6,7 @@ import { PeriodPicker } from '../components/PeriodPicker'
 import { TxRow } from '../components/TxRow'
 import { useTransactions, type Transaction } from '../lib/api'
 import { formatDate } from '../lib/dates'
-import { categoryLines, KIND_EFFECT, KIND_LABEL, type TxKind } from '../lib/finance'
+import { categoryLineFilter, categoryLines, KIND_EFFECT, KIND_LABEL, txSpending, type TxKind } from '../lib/finance'
 import { formatOre } from '../lib/money'
 
 type Sort = 'date' | 'amount_desc' | 'amount_asc'
@@ -28,17 +28,18 @@ export function Transactions() {
     setParams(p, { replace: true })
   }
 
+  const lineFilter = useMemo(() => (catFilter ? categoryLineFilter(catFilter, app.categories) : undefined), [catFilter, app.categories])
+
   const filtered = useMemo(() => {
     if (!q.data) return []
     const needle = search.trim().toLowerCase()
+    // Beløpssøk: "249,90", "249.9" og "1 249" skal alle treffe
+    const amountNeedle = /^[\d\s.,]+$/.test(needle) ? needle.replace(/\s/g, '').replace(',', '.') : null
     const matchesCat = (t: Transaction) => {
-      if (!catFilter) return true
-      return categoryLines(t).some((l) => {
-        if (catFilter === 'ingen') return l.category_id === null && KIND_EFFECT[t.kind].spending !== 0
-        if (!l.category_id) return false
-        const c = app.catById.get(l.category_id)
-        return l.category_id === catFilter || c?.parent_id === catFilter
-      })
+      if (!lineFilter) return true
+      // Ukategorisert gjelder bare forbruk, slik som i oversikten
+      if (catFilter === 'ingen' && KIND_EFFECT[t.kind].spending === 0) return false
+      return categoryLines(t).some(lineFilter)
     }
     const list = q.data.filter((t) => {
       if (kind && t.kind !== kind) return false
@@ -47,14 +48,17 @@ export function Transactions() {
       const merchant = t.merchant_id ? app.merchantById.get(t.merchant_id)?.name ?? '' : ''
       const cats = categoryLines(t).map((l) => (l.category_id ? app.catById.get(l.category_id)?.name ?? '' : '')).join(' ')
       const hay = [merchant, t.description, t.note, t.tags.join(' '), cats, KIND_LABEL[t.kind]].join(' ').toLowerCase()
-      return hay.includes(needle) || String(t.amount_ore / 100).includes(needle.replace(',', '.'))
+      if (hay.includes(needle)) return true
+      return amountNeedle !== null && amountNeedle !== '' &&
+        `${Math.floor(t.amount_ore / 100)}.${String(t.amount_ore % 100).padStart(2, '0')}`.includes(amountNeedle)
     })
     if (sort === 'amount_desc') list.sort((a, b) => b.amount_ore - a.amount_ore)
     if (sort === 'amount_asc') list.sort((a, b) => a.amount_ore - b.amount_ore)
     return list
-  }, [q.data, search, kind, sort, catFilter, app.catById, app.merchantById])
+  }, [q.data, search, kind, sort, catFilter, lineFilter, app.catById, app.merchantById])
 
-  const spending = filtered.reduce((sum, t) => sum + KIND_EFFECT[t.kind].spending * t.amount_ore, 0)
+  // Med kategorifilter teller bare den delen av et delt kjøp som hører til kategorien
+  const spending = filtered.reduce((sum, t) => sum + txSpending(t, lineFilter), 0)
   const groups = useMemo(() => {
     if (sort !== 'date') return [{ date: null as string | null, items: filtered }]
     const map = new Map<string, Transaction[]>()
@@ -85,7 +89,8 @@ export function Transactions() {
             <option value="amount_asc">Minste beløp først</option>
           </select>
           <div className="col-span-2 sm:col-span-1 text-sm">
-            <CategorySelect categories={app.categories} value={catFilter === 'ingen' ? null : catFilter} onChange={setCatFilter} emptyLabel="Alle kategorier" />
+            <CategorySelect categories={app.categories} value={catFilter} onChange={setCatFilter} emptyLabel="Alle kategorier"
+              extraOption={{ value: 'ingen', label: 'Ukategorisert' }} />
           </div>
         </div>
         {catName && (
@@ -116,7 +121,7 @@ export function Transactions() {
                   {g.date && (
                     <h2 className="flex justify-between text-sm text-muted px-1 mb-1">
                       <span className="first-letter:uppercase">{formatDate(g.date)}</span>
-                      <span className="num">{formatOre(g.items.reduce((a, t) => a + KIND_EFFECT[t.kind].spending * t.amount_ore, 0))}</span>
+                      <span className="num">{formatOre(g.items.reduce((a, t) => a + txSpending(t, lineFilter), 0))}</span>
                     </h2>
                   )}
                   <div className="rounded-xl bg-surface px-3 py-1">

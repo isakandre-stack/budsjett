@@ -65,6 +65,30 @@ export function categoryLines(tx: TxLike): SplitLike[] {
   return [{ category_id: tx.category_id, amount_ore: tx.amount_ore }]
 }
 
+/**
+ * Lager et filter for kategorilinjer. "ingen" betyr ukategorisert. En hovedkategori
+ * omfatter også underkategoriene sine, akkurat som i oversikten.
+ */
+export function categoryLineFilter(filter: string, categories: CategoryLike[]): (line: SplitLike) => boolean {
+  const byId = new Map(categories.map((c) => [c.id, c]))
+  if (filter === 'ingen') return (l) => !l.category_id || !byId.has(l.category_id)
+  return (l) => {
+    if (!l.category_id) return false
+    return l.category_id === filter || byId.get(l.category_id)?.parent_id === filter
+  }
+}
+
+/**
+ * Forbruket en transaksjon står for. Med filter teller bare linjene som passer,
+ * så et delt kjøp bare bidrar med sin del i kategorien du ser på.
+ */
+export function txSpending(tx: TxLike, lineFilter?: (line: SplitLike) => boolean): number {
+  const eff = KIND_EFFECT[tx.kind].spending
+  if (eff === 0) return 0
+  const lines = lineFilter ? categoryLines(tx).filter(lineFilter) : categoryLines(tx)
+  return eff * lines.reduce((sum, l) => sum + l.amount_ore, 0)
+}
+
 export interface CategoryTotal {
   /** Hovedkategori, eller null for ukategorisert */
   id: string | null
@@ -109,6 +133,8 @@ export function summarize(
   let principal = 0
   let drawdown = 0
   let net = 0
+  // Forbruk som er ført på en dato som ikke har kommet ennå, for eksempel husleie lagt inn på forhånd
+  let futureSpending = 0
 
   const catById = new Map(categories.map((c) => [c.id, c]))
   const top = new Map<string | null, { amount: number; txIds: Set<string>; children: Map<string, number> }>()
@@ -123,6 +149,7 @@ export function summarize(
     if (eff.spending === 0) continue
 
     spending += eff.spending * t.amount_ore
+    if (t.occurred_on > today) futureSpending += eff.spending * t.amount_ore
     for (const line of categoryLines(t)) {
       const cat = line.category_id ? catById.get(line.category_id) : undefined
       const topId = cat ? (cat.parent_id ?? cat.id) : null
@@ -161,9 +188,12 @@ export function summarize(
   else if (today > period.to) daysElapsed = daysTotal
   else daysElapsed = daysBetweenInclusive(period.from, today)
 
-  const avgPerDayOre = daysElapsed > 0 ? Math.round(spending / daysElapsed) : null
+  // Snitt og tempo regnes bare av det som faktisk har skjedd til og med i dag. Forbruk ført
+  // fram i tid legges til anslaget én gang, i stedet for å blåses opp som om det var dagens tempo.
+  const spentSoFar = spending - futureSpending
+  const avgPerDayOre = daysElapsed > 0 ? Math.round(spentSoFar / daysElapsed) : null
   const ongoing = daysElapsed > 0 && daysElapsed < daysTotal
-  const forecastSpendingOre = ongoing ? Math.round((spending * daysTotal) / daysElapsed) : null
+  const forecastSpendingOre = ongoing ? Math.round((spentSoFar * daysTotal) / daysElapsed) + futureSpending : null
 
   return {
     incomeOre: income,

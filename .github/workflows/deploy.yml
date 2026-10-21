@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 # Offentlige verdier: prosjektadressen og den offentlige (publishable) nøkkelen.
-# De ligger uansett synlig i appen. All beskyttelse ligger i innlogging, tofaktor og RLS.
+# De ligger uansett synlig i appen. All beskyttelse ligger i innlogging og RLS.
 # Kan overstyres med repo-variabler med samme navn.
 env:
   VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://yfhflsjgyefpqayfmxhq.supabase.co' }}

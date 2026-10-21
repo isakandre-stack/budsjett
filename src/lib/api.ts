@@ -118,7 +118,7 @@ export function useTransactions(householdId: string | undefined, period: Period)
         const rows = check(await supabase.from('transactions').select(TX_COLUMNS)
           .eq('household_id', householdId!)
           .gte('occurred_on', period.from).lte('occurred_on', period.to)
-          .order('occurred_on', { ascending: false }).order('created_at', { ascending: false })
+          .order('occurred_on', { ascending: false }).order('created_at', { ascending: false }).order('id')
           .range(offset, offset + page - 1)) as unknown as Transaction[]
         all.push(...rows)
         if (rows.length < page) break
@@ -232,6 +232,15 @@ export function useAccountMutations(householdId: string | undefined) {
       onSuccess: done,
     }),
   }
+}
+
+export function useSetDefaultAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ userId, accountId }: { userId: string; accountId: string }) =>
+      check(await supabase.from('user_preferences').update({ default_account_id: accountId }).eq('user_id', userId)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['bootstrap'] }),
+  })
 }
 
 export function useSetTheme() {

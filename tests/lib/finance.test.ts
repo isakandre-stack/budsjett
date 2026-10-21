@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { daysInMonth, monthPeriod, shiftMonth, todayISO, yearPeriod, formatDate } from '../../src/lib/dates'
-import { summarize, suggestCategory, type CategoryLike, type TxLike, type TxKind } from '../../src/lib/finance'
+import { categoryLineFilter, summarize, suggestCategory, txSpending, type CategoryLike, type TxLike, type TxKind } from '../../src/lib/finance'
 
 const cats: CategoryLike[] = [
   { id: 'mat', parent_id: null, name: 'Mat og dagligvarer', color: '#22c55e' },
@@ -163,5 +163,47 @@ describe('suggestCategory', () => {
     expect(suggestCategory('rema 1000 lillestrøm', merchants)).toBe('dagligvarer')
     expect(suggestCategory('Elkjøp', merchants)).toBeNull()
     expect(suggestCategory('', merchants)).toBeNull()
+  })
+})
+
+describe('forbruk fram i tid', () => {
+  it('blåser ikke opp snitt og anslag når noe er ført på en senere dato', () => {
+    // 10 000 brukt de ti første dagene, husleie på 12 000 ført på den 30.
+    const s = summarize([tx('expense', 10000, '2026-10-05'), tx('expense', 12000, '2026-10-30')], cats, oct, '2026-10-10')
+    expect(s.spendingOre).toBe(22000)
+    expect(s.avgPerDayOre).toBe(1000)
+    expect(s.forecastSpendingOre).toBe(31000 + 12000)
+  })
+})
+
+describe('kategorifilter på transaksjonslisten', () => {
+  const split = tx('expense', 10000, '2026-10-02', 'dagligvarer', [['dagligvarer', 7000], ['shopping', 3000]])
+  const plain = tx('expense', 5000, '2026-10-03', 'kiosk')
+  const none = tx('expense', 2000, '2026-10-04', null)
+  const ukjent = tx('expense', 1500, '2026-10-04', 'slettet-kategori')
+
+  it('et delt kjøp teller bare med sin del i kategorien', () => {
+    const shopping = categoryLineFilter('shopping', cats)
+    expect(txSpending(split, shopping)).toBe(3000)
+    const mat = categoryLineFilter('mat', cats)
+    expect(txSpending(split, mat) + txSpending(plain, mat)).toBe(12000)
+    // Uten filter teller hele beløpet
+    expect(txSpending(split)).toBe(10000)
+  })
+
+  it('ukategorisert stemmer med oversikten', () => {
+    const ingen = categoryLineFilter('ingen', cats)
+    const total = [split, plain, none, ukjent].reduce((a, t) => a + txSpending(t, ingen), 0)
+    const s = summarize([split, plain, none, ukjent], cats, oct, '2026-10-21')
+    expect(total).toBe(s.byCategory.find((c) => c.id === null)!.amountOre)
+  })
+
+  it('tallene per kategori stemmer med oversikten', () => {
+    const list = [split, plain, none, tx('refund', 1000, '2026-10-05', 'kiosk')]
+    const s = summarize(list, cats, oct, '2026-10-21')
+    for (const c of s.byCategory) {
+      const f = categoryLineFilter(c.id ?? 'ingen', cats)
+      expect(list.reduce((a, t) => a + txSpending(t, f), 0)).toBe(c.amountOre)
+    }
   })
 })

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../app/AppContext'
 import { useToast } from '../components/Toast'
-import { useAccountMutations, useCategoryMutations, useSetTheme, type Category } from '../lib/api'
+import { useAccountMutations, useCategoryMutations, useSetDefaultAccount, useSetTheme, type Account, type Category } from '../lib/api'
 import { errorMessage, supabase } from '../lib/supabase'
 import { applyTheme, storedTheme, type Theme } from '../lib/theme'
 
@@ -90,8 +90,9 @@ function useCatMut() {
   const { householdId } = useApp()
   const toast = useToast()
   const m = useCategoryMutations(householdId)
-  const run = async (fn: () => Promise<unknown>, ok?: string) => {
-    try { await fn(); if (ok) toast({ text: ok }) } catch (e) { toast({ text: errorMessage(e), tone: 'error' }) }
+  /** Returnerer true hvis det gikk bra, så feltet bare tømmes eller beholdes når lagringen faktisk lyktes. */
+  const run = async (fn: () => Promise<unknown>, ok?: string): Promise<boolean> => {
+    try { await fn(); if (ok) toast({ text: ok }); return true } catch (e) { toast({ text: errorMessage(e), tone: 'error' }); return false }
   }
   return { m, run }
 }
@@ -102,7 +103,9 @@ function NameField({ cat }: { cat: Category }) {
   const commit = () => {
     const n = name.trim()
     if (!n) { setName(cat.name); return }
-    if (n !== cat.name) void run(() => m.update.mutateAsync({ id: cat.id, name: n }))
+    if (n === cat.name) { setName(n); return }
+    // Hvis navnet ble avvist (for eksempel fordi det finnes fra før), vises det gamle navnet igjen
+    void run(() => m.update.mutateAsync({ id: cat.id, name: n })).then((ok) => setName(ok ? n : cat.name))
   }
   return (
     <input className="bg-transparent rounded px-1 -mx-1 py-1 min-w-0 flex-1 focus:bg-sunken focus:outline-none" aria-label={`Navn på ${cat.name}`}
@@ -173,10 +176,10 @@ function NewCategory({ kind, parentId, label, color }: { kind: 'expense' | 'inco
       if (!n) return
       const max = Math.max(0, ...categories.filter((c) => c.parent_id === parentId).map((c) => c.sort_order))
       void run(() => m.create.mutateAsync({ name: n, parent_id: parentId, kind, color: color ?? (parentId ? null : '#64748b'), sort_order: max + 10 }), `${n} er lagt til`)
-        .then(() => setName(''))
+        .then((ok) => { if (ok) setName('') })
     }}>
       <input className="field text-sm" placeholder={label} aria-label={label} value={name} onChange={(e) => setName(e.target.value)} />
-      <button className="btn btn-ghost bg-sunken text-sm" disabled={!name.trim()}>Legg til</button>
+      <button className="btn btn-ghost bg-sunken text-sm whitespace-nowrap" disabled={!name.trim()}>Legg til</button>
     </form>
   )
 }
@@ -187,42 +190,92 @@ const ACCOUNT_TYPES: [string, string][] = [
 ]
 
 function Accounts() {
-  const { accounts, householdId } = useApp()
+  const { accounts, householdId, defaultAccountId, userId } = useApp()
   const m = useAccountMutations(householdId)
+  const setDefault = useSetDefaultAccount()
   const toast = useToast()
   const [name, setName] = useState('')
   const [type, setType] = useState('savings')
+  const [showArchived, setShowArchived] = useState(false)
   const typeLabel = (t: string) => ACCOUNT_TYPES.find(([v]) => v === t)?.[1] ?? t
+  const active = accounts.filter((a) => !a.is_archived)
+  const archived = accounts.filter((a) => a.is_archived)
+  const fail = (err: unknown) => toast({ text: errorMessage(err), tone: 'error' })
+
+  const archive = (a: Account) => m.update.mutate({ id: a.id, is_archived: true }, {
+    onSuccess: () => toast({ text: `${a.name} er arkivert` }),
+    onError: fail,
+  })
+  const restore = (a: Account) => m.update.mutate({ id: a.id, is_archived: false }, {
+    onSuccess: () => toast({ text: `${a.name} er tilbake` }),
+    onError: fail,
+  })
+  const makeDefault = (a: Account) => setDefault.mutate({ userId, accountId: a.id }, {
+    onSuccess: () => toast({ text: `${a.name} brukes nå for nye kjøp` }),
+    onError: fail,
+  })
 
   return (
-    <Section id="kontoer" title="Kontoer" intro="Med to eller flere kontoer kan du registrere overføringer, som aldri teller som inntekt eller forbruk.">
+    <Section id="kontoer" title="Kontoer" intro="Med to eller flere kontoer kan du registrere overføringer, som aldri teller som inntekt eller forbruk. Standardkontoen brukes for nye kjøp.">
       <ul className="rounded-xl bg-surface divide-y divide-line">
-        {accounts.filter((a) => !a.is_archived).map((a) => (
-          <li key={a.id} className="flex items-center gap-2 px-3 py-2.5">
-            <span className="flex-1">{a.name}</span>
-            <span className="text-sm text-muted">{typeLabel(a.type)}</span>
-            {accounts.filter((x) => !x.is_archived).length > 1 && (
-              <button className="text-sm text-muted px-2 py-1 rounded hover:bg-sunken"
-                onClick={() => m.update.mutate({ id: a.id, is_archived: true }, { onSuccess: () => toast({ text: `${a.name} er arkivert` }) })}>Arkiver</button>
-            )}
-          </li>
-        ))}
+        {active.map((a) => {
+          const isDefault = a.id === defaultAccountId
+          return (
+            <li key={a.id} className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+              <span className="flex-1 min-w-0">
+                <span className="block truncate">{a.name}</span>
+                <span className="block text-xs text-muted">{typeLabel(a.type)}</span>
+              </span>
+              {isDefault ? (
+                <span className="text-xs font-semibold rounded-full bg-accent-soft px-2 py-1">Standard</span>
+              ) : (
+                <button className="text-sm text-muted px-2 py-1 rounded hover:bg-sunken" disabled={setDefault.isPending} onClick={() => makeDefault(a)}>
+                  Gjør til standard
+                </button>
+              )}
+              {/* Standardkontoen kan ikke arkiveres, ellers ville nye kjøp havnet på en skjult konto */}
+              {!isDefault && active.length > 1 && (
+                <button className="text-sm text-muted px-2 py-1 rounded hover:bg-sunken" disabled={m.update.isPending} onClick={() => archive(a)}>Arkiver</button>
+              )}
+            </li>
+          )
+        })}
       </ul>
+      {!defaultAccountId && active.length > 0 && (
+        <p className="text-sm text-warn mt-2">Ingen standardkonto er valgt. Nye kjøp lagres uten konto til du velger en.</p>
+      )}
       <form className="flex flex-wrap gap-2 mt-2" onSubmit={(e) => {
         e.preventDefault()
         const n = name.trim()
         if (!n) return
         m.create.mutate({ name: n, type }, {
           onSuccess: () => { setName(''); toast({ text: `${n} er lagt til` }) },
-          onError: (err) => toast({ text: errorMessage(err), tone: 'error' }),
+          onError: fail,
         })
       }}>
         <input className="field text-sm flex-1 min-w-40" placeholder="Navn på ny konto" aria-label="Navn på ny konto" value={name} onChange={(e) => setName(e.target.value)} />
         <select className="field text-sm w-auto" aria-label="Kontotype" value={type} onChange={(e) => setType(e.target.value)}>
           {ACCOUNT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <button className="btn btn-ghost bg-sunken text-sm" disabled={!name.trim()}>Legg til</button>
+        <button className="btn btn-ghost bg-sunken text-sm whitespace-nowrap" disabled={!name.trim() || m.create.isPending}>Legg til</button>
       </form>
+      {archived.length > 0 && (
+        <div className="mt-3">
+          <button className="text-sm font-semibold text-accent" aria-expanded={showArchived} onClick={() => setShowArchived(!showArchived)}>
+            {showArchived ? 'Skjul arkiverte kontoer' : `Vis arkiverte kontoer (${archived.length})`}
+          </button>
+          {showArchived && (
+            <ul className="mt-2 rounded-xl bg-surface divide-y divide-line">
+              {archived.map((a) => (
+                <li key={a.id} className="flex items-center gap-2 px-3 py-2">
+                  <span className="flex-1 text-muted">{a.name}</span>
+                  <button className="text-sm font-semibold text-accent px-2 py-1" onClick={() => restore(a)}>Gjenopprett</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </Section>
   )
 }

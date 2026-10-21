@@ -6,13 +6,20 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Adressen på GitHub Pages blir https://<bruker>.github.io/budsjett/
 const base = process.env.BASE_PATH ?? '/budsjett/'
 
+// Vises i Innstillinger, så det er lett å se om telefonen har fått siste versjon
+const version = (process.env.GITHUB_SHA ?? 'lokal').slice(0, 7)
+
 export default defineConfig({
   base,
+  define: { __APP_VERSION__: JSON.stringify(version) },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
+      // Ny versjon aktiveres med en gang. Registreringen skjer i src/lib/update.ts,
+      // som laster appen inn på nytt når den nye versjonen har tatt over.
       registerType: 'autoUpdate',
+      injectRegister: false,
       includeAssets: ['icon.svg'],
       manifest: {
         name: 'Budsjett',
@@ -34,6 +41,9 @@ export default defineConfig({
         // Bare selve appen caches. Økonomidata fra Supabase lagres aldri i cachen.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: `${base}index.html`,
+        // Ny versjon tar over med en gang i stedet for å vente til appen er lukket helt
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [],
       },
     }),

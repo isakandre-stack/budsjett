@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast'
 import { useAccountMutations, useCategoryMutations, useSetDefaultAccount, useSetTheme, type Account, type Category } from '../lib/api'
 import { errorMessage, supabase } from '../lib/supabase'
 import { applyTheme, storedTheme, type Theme } from '../lib/theme'
+import { appVersion } from '../lib/update'
 
 export function Settings() {
   return (
@@ -286,6 +287,7 @@ function Security() {
     <Section id="sikkerhet" title="Innlogging og sikkerhet">
       <div className="rounded-xl bg-surface p-4 space-y-3">
         <p>Logget inn som <span className="font-medium">{email}</span></p>
+        <p className="text-sm text-muted">Versjon {appVersion}</p>
         <p className="text-sm text-muted">Bare du har bruker. Ingen kan registrere seg selv, og databasen viser bare dine egne data.</p>
         <div className="flex flex-wrap gap-2">
           <button className="btn btn-ghost bg-sunken" onClick={() => supabase.auth.signOut({ scope: 'local' })}>Logg ut</button>

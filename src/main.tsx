@@ -12,8 +12,10 @@ import { Transactions } from './pages/Transactions'
 import { Settings } from './pages/Settings'
 import { configured } from './lib/supabase'
 import { applyTheme, storedTheme } from './lib/theme'
+import { startUpdates } from './lib/update'
 
 applyTheme(storedTheme())
+startUpdates()
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -40,9 +40,7 @@ Tofaktor med autentiseringsapp (TOTP) er på som standard i Supabase. Første ga
 
 1. Lag et nytt repo som heter `budsjett` og push denne mappen dit.
 2. **Settings > Pages > Source**: velg *GitHub Actions*.
-3. **Settings > Secrets and variables > Actions > Variables**: legg inn
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+3. Supabase-adressen og den offentlige nøkkelen står allerede i `.github/workflows/deploy.yml`. Bytter du prosjekt, kan du overstyre dem med variablene `VITE_SUPABASE_URL` og `VITE_SUPABASE_ANON_KEY` under **Settings > Secrets and variables > Actions > Variables**.
 4. Push til `main`. Testene kjøres, og appen publiseres på `https://<brukernavn>.github.io/budsjett/`.
 
 ### 3. Backup (anbefalt)

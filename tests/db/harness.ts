@@ -17,6 +17,9 @@ create role anon nologin;
 create role authenticated nologin;
 grant usage on schema public, auth to anon, authenticated;
 grant execute on all functions in schema auth to anon, authenticated;
+-- Som i Supabase: nye tabeller og funksjoner i public gis automatisk til anon og authenticated
+alter default privileges in schema public grant all on tables to anon, authenticated;
+alter default privileges in schema public grant execute on functions to anon, authenticated;
 `
 
 export async function createDb() {

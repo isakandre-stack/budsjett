@@ -271,7 +271,7 @@ function Accounts() {
               )}
               <button className="text-sm text-muted px-2 py-1 rounded hover:bg-sunken" aria-expanded={editing === a.id}
                 onClick={() => setEditing(editing === a.id ? null : a.id)}>
-                {a.opening_balance_on ? 'Startsaldo' : 'Legg inn saldo'}
+                Endre
               </button>
               {editing === a.id && <OpeningBalance a={a} onDone={() => setEditing(null)} />}
               {/* Standardkontoen kan ikke arkiveres, ellers ville nye kjøp havnet på en skjult konto */}
@@ -340,6 +340,8 @@ function Security() {
 
 /** Saldoen på kontoen en gitt dag. Alt som føres fra og med den dagen, regnes inn i saldoen. */
 function OpeningBalance({ a, onDone }: { a: Account; onDone: () => void }) {
+  const [name, setName] = useState(a.name)
+  const [type, setType] = useState(a.type)
   const { householdId } = useApp()
   const m = useAccountMutations(householdId)
   const toast = useToast()
@@ -350,13 +352,18 @@ function OpeningBalance({ a, onDone }: { a: Account; onDone: () => void }) {
   const [date, setDate] = useState(a.opening_balance_on ?? '2026-11-01')
   const [error, setError] = useState<string | null>(null)
   const ore = amount.trim() === '0' ? 0 : parseAmountToOre(amount)
+  const hasBalance = amount.trim() !== ''
 
   function save(e: React.FormEvent) {
     e.preventDefault()
-    if (ore === null) return setError('Skriv inn et gyldig beløp.')
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setError('Velg en dato.')
-    m.update.mutate({ id: a.id, opening_balance_ore: owe ? -ore : ore, opening_balance_on: date }, {
-      onSuccess: () => { toast({ text: `Startsaldo for ${a.name} er lagret` }); onDone() },
+    if (!name.trim()) return setError('Kontoen må ha et navn.')
+    if (hasBalance && ore === null) return setError('Skriv inn et gyldig beløp.')
+    if (hasBalance && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return setError('Velg en dato.')
+    const balance = hasBalance && ore !== null
+      ? { opening_balance_ore: owe ? -ore : ore, opening_balance_on: date }
+      : { opening_balance_ore: null, opening_balance_on: null }
+    m.update.mutate({ id: a.id, name: name.trim(), type, ...balance }, {
+      onSuccess: () => { toast({ text: `${name.trim()} er lagret` }); onDone() },
       onError: (err) => setError(errorMessage(err)),
     })
   }
@@ -369,7 +376,19 @@ function OpeningBalance({ a, onDone }: { a: Account; onDone: () => void }) {
 
   return (
     <form onSubmit={save} className="basis-full mt-1 rounded-lg bg-sunken p-3 space-y-3" noValidate>
-      <p className="text-sm text-muted">Hva sto på kontoen ved starten av dagen? Alt du fører fra og med denne datoen, regnes inn i saldoen.</p>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="text-sm text-muted">Navn</span>
+          <input className="field mt-1" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="text-sm text-muted">Type</span>
+          <select className="field mt-1" value={type} onChange={(e) => setType(e.target.value)}>
+            {ACCOUNT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+      </div>
+      <p className="text-sm text-muted">Startsaldo: hva sto på kontoen ved starten av dagen? Alt du fører fra og med denne datoen, regnes inn i saldoen. La beløpet stå tomt hvis du ikke vil følge saldoen.</p>
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
           <span className="text-sm text-muted">Beløp</span>
@@ -389,7 +408,7 @@ function OpeningBalance({ a, onDone }: { a: Account; onDone: () => void }) {
         <button className="btn btn-primary" disabled={m.update.isPending}>Lagre</button>
         <button type="button" className="btn btn-ghost" onClick={onDone}>Avbryt</button>
         <span className="flex-1" />
-        {start !== null && <button type="button" className="btn btn-ghost btn-danger" onClick={clear} disabled={m.update.isPending}>Fjern</button>}
+        {start !== null && <button type="button" className="btn btn-ghost btn-danger" onClick={clear} disabled={m.update.isPending}>Fjern startsaldo</button>}
       </div>
     </form>
   )

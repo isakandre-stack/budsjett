@@ -252,7 +252,7 @@ export function useAccountMutations(householdId: string | undefined) {
       onSuccess: done,
     }),
     update: useMutation({
-      mutationFn: async ({ id, ...patch }: { id: string; name?: string; is_archived?: boolean; opening_balance_ore?: number | null; opening_balance_on?: string | null }) =>
+      mutationFn: async ({ id, ...patch }: { id: string; name?: string; type?: string; is_archived?: boolean; opening_balance_ore?: number | null; opening_balance_on?: string | null }) =>
         check(await supabase.from('financial_accounts').update(patch).eq('id', id)),
       onSuccess: done,
     }),

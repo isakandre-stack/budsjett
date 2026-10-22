@@ -6,6 +6,8 @@ import { useAccountMutations, useCategoryMutations, useSetDefaultAccount, useSet
 import { errorMessage, supabase } from '../lib/supabase'
 import { applyTheme, storedTheme, type Theme } from '../lib/theme'
 import { appVersion } from '../lib/update'
+import { formatOre, oreToInput, parseAmountToOre } from '../lib/money'
+import { useBalances } from '../lib/useBalances'
 
 export function Settings() {
   return (
@@ -226,6 +228,8 @@ function Accounts() {
   const [name, setName] = useState('')
   const [type, setType] = useState('savings')
   const [showArchived, setShowArchived] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
+  const { balances } = useBalances()
   const typeLabel = (t: string) => ACCOUNT_TYPES.find(([v]) => v === t)?.[1] ?? t
   const active = accounts.filter((a) => !a.is_archived)
   const archived = accounts.filter((a) => a.is_archived)
@@ -253,7 +257,10 @@ function Accounts() {
             <li key={a.id} className="flex flex-wrap items-center gap-2 px-3 py-2.5">
               <span className="flex-1 min-w-0">
                 <span className="block truncate">{a.name}</span>
-                <span className="block text-xs text-muted">{typeLabel(a.type)}</span>
+                <span className="block text-xs text-muted">
+                  {typeLabel(a.type)}
+                  {balances?.has(a.id) && <> · saldo <span className="num text-ink font-medium">{formatOre(balances.get(a.id)!)}</span></>}
+                </span>
               </span>
               {isDefault ? (
                 <span className="text-xs font-semibold rounded-full bg-accent-soft px-2 py-1">Standard</span>
@@ -262,6 +269,11 @@ function Accounts() {
                   Gjør til standard
                 </button>
               )}
+              <button className="text-sm text-muted px-2 py-1 rounded hover:bg-sunken" aria-expanded={editing === a.id}
+                onClick={() => setEditing(editing === a.id ? null : a.id)}>
+                {a.opening_balance_on ? 'Startsaldo' : 'Legg inn saldo'}
+              </button>
+              {editing === a.id && <OpeningBalance a={a} onDone={() => setEditing(null)} />}
               {/* Standardkontoen kan ikke arkiveres, ellers ville nye kjøp havnet på en skjult konto */}
               {!isDefault && active.length > 1 && (
                 <button className="text-sm text-muted px-2 py-1 rounded hover:bg-sunken" disabled={m.update.isPending} onClick={() => archive(a)}>Arkiver</button>
@@ -323,5 +335,62 @@ function Security() {
         </div>
       </div>
     </Section>
+  )
+}
+
+/** Saldoen på kontoen en gitt dag. Alt som føres fra og med den dagen, regnes inn i saldoen. */
+function OpeningBalance({ a, onDone }: { a: Account; onDone: () => void }) {
+  const { householdId } = useApp()
+  const m = useAccountMutations(householdId)
+  const toast = useToast()
+  const debt = a.type === 'credit_card' || a.type === 'loan'
+  const start = a.opening_balance_ore
+  const [amount, setAmount] = useState(start === null ? '' : oreToInput(Math.abs(start)))
+  const [owe, setOwe] = useState(start === null ? debt : start < 0)
+  const [date, setDate] = useState(a.opening_balance_on ?? '2026-11-01')
+  const [error, setError] = useState<string | null>(null)
+  const ore = amount.trim() === '0' ? 0 : parseAmountToOre(amount)
+
+  function save(e: React.FormEvent) {
+    e.preventDefault()
+    if (ore === null) return setError('Skriv inn et gyldig beløp.')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setError('Velg en dato.')
+    m.update.mutate({ id: a.id, opening_balance_ore: owe ? -ore : ore, opening_balance_on: date }, {
+      onSuccess: () => { toast({ text: `Startsaldo for ${a.name} er lagret` }); onDone() },
+      onError: (err) => setError(errorMessage(err)),
+    })
+  }
+  function clear() {
+    m.update.mutate({ id: a.id, opening_balance_ore: null, opening_balance_on: null }, {
+      onSuccess: () => { toast({ text: `Startsaldo for ${a.name} er fjernet` }); onDone() },
+      onError: (err) => setError(errorMessage(err)),
+    })
+  }
+
+  return (
+    <form onSubmit={save} className="basis-full mt-1 rounded-lg bg-sunken p-3 space-y-3" noValidate>
+      <p className="text-sm text-muted">Hva sto på kontoen ved starten av dagen? Alt du fører fra og med denne datoen, regnes inn i saldoen.</p>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="text-sm text-muted">Beløp</span>
+          <input className="field mt-1 num" inputMode="decimal" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={!!amount && ore === null} />
+        </label>
+        <label className="block">
+          <span className="text-sm text-muted">Per dato</span>
+          <input type="date" className="field mt-1" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" className="size-5 accent-[var(--accent)]" checked={owe} onChange={(e) => setOwe(e.target.checked)} />
+        Dette er gjeld (for eksempel ubetalt på kredittkortet)
+      </label>
+      {error && <p role="alert" className="text-sm text-bad">{error}</p>}
+      <div className="flex gap-2">
+        <button className="btn btn-primary" disabled={m.update.isPending}>Lagre</button>
+        <button type="button" className="btn btn-ghost" onClick={onDone}>Avbryt</button>
+        <span className="flex-1" />
+        {start !== null && <button type="button" className="btn btn-ghost btn-danger" onClick={clear} disabled={m.update.isPending}>Fjern</button>}
+      </div>
+    </form>
   )
 }

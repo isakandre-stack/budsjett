@@ -227,12 +227,14 @@ const TRANSFER_TEXT = /^\s*(til|fra)\s*:|^\s*innbetaling\s*$|overføring|overfor
 
 /**
  * Finner rader som trolig er penger mellom dine egne kontoer, for eksempel nedbetaling av kredittkortet:
- * "Til : konto" ut fra brukskontoen og "Innbetaling" inn på kortet, med samme beløp.
- * Slike rader er verken inntekt eller forbruk. En ensom "Innbetaling" regnes også med,
- * siden kortet kan være betalt fra en konto som ikke er i filen. Returnerer indeksene.
+ * "Til : konto" ut fra brukskontoen og "Innbetaling" inn på kortet.
+ *
+ * Svaret per radnummer:
+ *  - "transfer": føres som overføring
+ *  - "mirror":   samme overføring sett fra den andre kontoen i samme fil, skal ikke føres en gang til
  */
-export function likelyTransfers(rows: BankRow[]): Set<number> {
-  const out = new Set<number>()
+export function likelyTransfers(rows: BankRow[]): Map<number, 'transfer' | 'mirror'> {
+  const out = new Map<number, 'transfer' | 'mirror'>()
   const dayNum = (iso: string) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86_400_000
   const looks = rows.map((r) => TRANSFER_TEXT.test(r.description))
   rows.forEach((r, i) => {
@@ -245,8 +247,9 @@ export function likelyTransfers(rows: BankRow[]): Set<number> {
       const gap = Math.abs(dayNum(o.date) - dayNum(r.date))
       if (gap <= 2 && gap < bestGap) { best = j; bestGap = gap }
     })
-    if (best >= 0) { out.add(i); out.add(best) }
+    if (best >= 0) { out.set(i, 'transfer'); out.set(best, 'mirror') }
   })
-  rows.forEach((r, i) => { if (r.direction === 'in' && /^\s*innbetaling\s*$/i.test(r.description)) out.add(i) })
+  // Overføringer der den andre siden ikke er i filen
+  rows.forEach((_, i) => { if (!out.has(i) && looks[i]) out.set(i, 'transfer') })
   return out
 }

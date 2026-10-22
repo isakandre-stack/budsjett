@@ -9,6 +9,7 @@ import { monthLabel, monthOf, todayISO } from '../lib/dates'
 import { budgetFactor, budgetStatus, compareWithPrevious, previousComparablePeriod, summarize, upcomingFixedSpending, type BudgetStatus } from '../lib/finance'
 import { formatOre } from '../lib/money'
 import { useSubscriptions } from '../lib/useSubscriptions'
+import { useBalances } from '../lib/useBalances'
 
 export function Dashboard() {
   const app = useApp()
@@ -109,6 +110,7 @@ export function Dashboard() {
                 {ongoing && <Stat label="Anslag for perioden" value={formatOre(s.forecastSpendingOre!, { decimals: 'never' })} hint="Variabelt forbruk i samme tempo, pluss faste poster" />}
                 {s.upcomingFixedOre > 0 && <Stat label="Faste utgifter som gjenstår" value={formatOre(s.upcomingFixedOre)} hint="Registreres automatisk på dagen" />}
               </dl>
+              <BalancesCard />
               <SubscriptionCard />
             </section>
 
@@ -243,5 +245,41 @@ function SubscriptionCard() {
       {count > 0 && <span className="num font-semibold whitespace-nowrap">{formatOre(s.subsMonthlyOre, { decimals: 'never' })}<span className="text-muted font-normal text-sm">/mnd</span></span>}
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" className="text-muted shrink-0"><path d="M7 4l5 5-5 5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
     </Link>
+  )
+}
+
+/** Hva som står på kontoene nå: startsaldo pluss alt som er ført siden */
+function BalancesCard() {
+  const app = useApp()
+  const { balances, hasAny } = useBalances()
+  if (!hasAny) {
+    return (
+      <Link to="/innstillinger" className="mt-3 block rounded-xl bg-surface px-4 py-3 hover:bg-sunken">
+        <span className="block font-medium">Saldo på kontoene</span>
+        <span className="block text-sm text-muted">Legg inn startsaldo, så viser appen hva som står på hver konto</span>
+      </Link>
+    )
+  }
+  if (!balances) return null
+  const rows = app.accounts.filter((a) => !a.is_archived && balances.has(a.id))
+  const total = rows.reduce((s, a) => s + balances.get(a.id)!, 0)
+  return (
+    <section aria-labelledby="saldo" className="mt-3 rounded-xl bg-surface px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="saldo" className="font-medium">Saldo nå</h2>
+        <span className={`num font-semibold ${total < 0 ? 'text-bad' : ''}`}>{formatOre(total, { decimals: 'never' })}</span>
+      </div>
+      <ul className="mt-2 space-y-1 text-sm">
+        {rows.map((a) => {
+          const b = balances.get(a.id)!
+          return (
+            <li key={a.id} className="flex justify-between gap-3">
+              <span className="text-muted truncate">{a.name}</span>
+              <span className={`num ${b < 0 ? 'text-bad' : ''}`}>{formatOre(b)}</span>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }

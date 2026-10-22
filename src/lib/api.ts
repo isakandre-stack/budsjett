@@ -27,6 +27,9 @@ export interface Account {
   name: string
   type: string
   is_archived: boolean
+  /** Saldo på startdatoen, i øre. Negativ for gjeld (kredittkort, lån). */
+  opening_balance_ore: number | null
+  opening_balance_on: string | null
 }
 
 export interface Split {
@@ -120,7 +123,7 @@ export function useAccounts(householdId: string | undefined) {
     queryKey: ['accounts', householdId],
     enabled: !!householdId,
     queryFn: async () =>
-      check(await supabase.from('financial_accounts').select('id, name, type, is_archived')
+      check(await supabase.from('financial_accounts').select('id, name, type, is_archived, opening_balance_ore, opening_balance_on')
         .eq('household_id', householdId!).order('created_at')) as Account[],
   })
 }
@@ -249,7 +252,7 @@ export function useAccountMutations(householdId: string | undefined) {
       onSuccess: done,
     }),
     update: useMutation({
-      mutationFn: async ({ id, ...patch }: { id: string; name?: string; is_archived?: boolean }) =>
+      mutationFn: async ({ id, ...patch }: { id: string; name?: string; is_archived?: boolean; opening_balance_ore?: number | null; opening_balance_on?: string | null }) =>
         check(await supabase.from('financial_accounts').update(patch).eq('id', id)),
       onSuccess: done,
     }),
@@ -366,7 +369,11 @@ export interface ImportRow {
   key: string
   date: string
   amount_ore: number
-  kind: 'expense' | 'income' | 'refund' | 'saving'
+  kind: 'expense' | 'income' | 'refund' | 'saving' | 'transfer'
+  /** Bare for overføringer: om pengene gikk ut av eller inn på kontoen som importeres */
+  direction?: 'in' | 'out'
+  /** Bare for overføringer: den andre kontoen, eller null hvis den ikke er lagt inn i appen */
+  other_account_id?: string | null
   merchant: string
   category_id: string | null
   note: string
@@ -374,9 +381,9 @@ export interface ImportRow {
 
 /** Transaksjoner i perioden, brukt til å kjenne igjen det som er importert eller ført for hånd før. */
 export async function fetchExistingForImport(householdId: string, from: string, to: string) {
-  const all: { id: string; amount_ore: number; occurred_on: string; import_key: string | null }[] = []
+  const all: { id: string; kind: string; amount_ore: number; occurred_on: string; import_key: string | null }[] = []
   for (let offset = 0; ; offset += 1000) {
-    const rows = check(await supabase.from('transactions').select('id, amount_ore, occurred_on, import_key')
+    const rows = check(await supabase.from('transactions').select('id, kind, amount_ore, occurred_on, import_key')
       .eq('household_id', householdId).gte('occurred_on', from).lte('occurred_on', to)
       .order('occurred_on').order('id').range(offset, offset + 999)) as typeof all
     all.push(...rows)

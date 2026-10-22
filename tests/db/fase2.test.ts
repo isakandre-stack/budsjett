@@ -143,7 +143,7 @@ describe('import', () => {
   })
 
   it('avviser ugyldige typer og andres husholdning', async () => {
-    await expect(run([{ ...rows[0], key: 'dnb:c', kind: 'transfer' }])).rejects.toThrow(/Ugyldig type/)
+    await expect(run([{ ...rows[0], key: 'dnb:c', kind: 'loan_drawdown' }])).rejects.toThrow(/Ugyldig type/)
     await expect(run([{ ...rows[0], key: 'dnb:d' }], ANNEN, hid)).rejects.toThrow(/row-level security/)
   })
 })

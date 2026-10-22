@@ -25,10 +25,14 @@ interface Draft {
   maybeDuplicate: boolean
   /** Ser ut som penger mellom egne kontoer, for eksempel nedbetaling av kredittkortet */
   maybeTransfer: boolean
+  /** Samme overføring som en annen rad i filen, sett fra den andre kontoen */
+  mirror: boolean
+  /** For overføringer: den andre kontoen. undefined betyr at appen gjetter ut fra valgt konto. */
+  otherAccountId?: string | null
 }
 
-const KINDS_OUT: Kind[] = ['expense', 'saving']
-const KINDS_IN: Kind[] = ['income', 'refund']
+const KINDS_OUT: Kind[] = ['expense', 'saving', 'transfer']
+const KINDS_IN: Kind[] = ['income', 'refund', 'transfer']
 
 export function ImportPage() {
   const app = useApp()
@@ -74,17 +78,22 @@ export function ImportPage() {
         r.direction === 'out' && merchants[i] && !suggest(merchants[i], 'expense') ? [merchants[i]] : []))]
       const fromRules = await suggestFromRules(app.householdId, unknown).catch(() => new Map<string, string>())
 
+      const dayNum = (iso: string) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86_400_000
       setRows(parsed.rows.map((r, i) => {
+        const role = transfers.get(i)
         const merchant = merchants[i]
-        const kind: Kind = r.direction === 'out' ? 'expense' : 'income'
+        const kind: Kind = role === 'transfer' ? 'transfer' : r.direction === 'out' ? 'expense' : 'income'
         const imported = importedKeys.has(keys[i])
-        const maybeDuplicate = dupRows.has(i)
-        const maybeTransfer = transfers.has(i)
+        // En overføring kan alt være ført fra den andre kontoens fil
+        const sameTransfer = role === 'transfer' && existing.some((e) => e.kind === 'transfer' && e.import_key !== keys[i]
+          && e.amount_ore === r.amountOre && Math.abs(dayNum(e.occurred_on) - dayNum(r.date)) <= 2)
+        const maybeDuplicate = dupRows.has(i) || sameTransfer
+        const mirror = role === 'mirror'
         return {
           bank: r, key: keys[i], merchant, kind,
-          categoryId: suggest(merchant, kind) ?? (kind === 'expense' ? fromRules.get(merchant) ?? null : null),
-          include: !imported && !maybeDuplicate && !maybeTransfer,
-          imported, maybeDuplicate, maybeTransfer,
+          categoryId: kind === 'transfer' ? null : suggest(merchant, kind) ?? (kind === 'expense' ? fromRules.get(merchant) ?? null : null),
+          include: !imported && !maybeDuplicate && !mirror,
+          imported, maybeDuplicate, maybeTransfer: !!role, mirror,
         }
       }))
       setSkipped(parsed.skipped)
@@ -94,6 +103,15 @@ export function ImportPage() {
       setReading(false)
     }
   }
+
+  /** Gjetter den andre kontoen i en overføring: kortet når pengene går ut, brukskontoen når de kommer inn. */
+  function guessOther(direction: 'in' | 'out'): string | null {
+    const others = activeAccounts.filter((a) => a.id !== accountId)
+    const want = direction === 'out' ? 'credit_card' : 'checking'
+    return others.find((a) => a.type === want)?.id ?? (others.length === 1 ? others[0].id : null)
+  }
+
+  const otherOf = (r: Draft) => (r.otherAccountId === undefined ? guessOther(r.bank.direction) : r.otherAccountId)
 
   function suggest(merchant: string, kind: Kind): string | null {
     const catKind = kind === 'income' ? 'income' : 'expense'
@@ -113,8 +131,9 @@ export function ImportPage() {
       in: chosen.filter((r) => r.bank.direction === 'in').reduce((s, r) => s + r.bank.amountOre, 0),
       imported: rows.filter((r) => r.imported).length,
       dup: rows.filter((r) => r.maybeDuplicate).length,
-      transfers: rows.filter((r) => r.maybeTransfer && !r.imported).length,
-      uncategorized: chosen.filter((r) => !r.categoryId && r.kind !== 'income').length,
+      transfers: rows.filter((r) => r.maybeTransfer && !r.mirror && !r.imported).length,
+      mirrors: rows.filter((r) => r.mirror && !r.imported).length,
+      uncategorized: chosen.filter((r) => !r.categoryId && r.kind !== 'income' && r.kind !== 'transfer').length,
     }
   }, [rows])
 
@@ -122,7 +141,8 @@ export function ImportPage() {
     if (!rows || !stats || stats.chosen === 0) return
     const payload: ImportRow[] = rows.filter((r) => r.include).map((r) => ({
       key: r.key, date: r.bank.date, amount_ore: r.bank.amountOre, kind: r.kind,
-      merchant: r.merchant.trim(), category_id: r.categoryId, note: r.bank.description,
+      merchant: r.merchant.trim(), category_id: r.kind === 'transfer' ? null : r.categoryId, note: r.bank.description,
+      ...(r.kind === 'transfer' ? { direction: r.bank.direction, other_account_id: otherOf(r) } : {}),
     }))
     try {
       const n = await save.mutateAsync({ householdId: app.householdId, accountId, rows: payload })
@@ -180,7 +200,8 @@ export function ImportPage() {
               </p>
             )}
             {stats.dup > 0 && <p className="text-warn">{stats.dup} ser ut som kjøp du har ført for hånd, og er ikke valgt. Huk av hvis de likevel skal med.</p>}
-            {stats.transfers > 0 && <p className="text-warn">{stats.transfers} ser ut som overføringer mellom egne kontoer (som nedbetaling av kredittkortet), og er ikke valgt. De er verken inntekt eller forbruk.</p>}
+            {stats.transfers > 0 && <p className="text-muted">{stats.transfers} ser ut som overføringer mellom egne kontoer, for eksempel nedbetaling av kredittkortet. De føres som overføring, så de teller verken som inntekt eller forbruk, men saldoen stemmer.</p>}
+            {stats.mirrors > 0 && <p className="text-warn">{stats.mirrors} er den andre siden av en overføring som alt er med fra filen, og er ikke valgt.</p>}
             {skipped.length > 0 && <p className="text-muted">{skipped.length} linjer kunne ikke leses (for eksempel saldolinjer) og er hoppet over.</p>}
             {stats.uncategorized > 0 && <p className="text-muted">{stats.uncategorized} valgte rader mangler kategori. Det går fint, du kan sette den senere.</p>}
           </div>
@@ -207,7 +228,7 @@ export function ImportPage() {
                     </p>
                     {r.imported && <p className="text-xs text-muted">Importert før</p>}
                     {r.maybeDuplicate && !r.imported && <p className="text-xs text-warn">Ligner et kjøp du har ført selv</p>}
-                    {r.maybeTransfer && !r.imported && <p className="text-xs text-warn">Ser ut som overføring mellom egne kontoer</p>}
+                    {r.mirror && !r.imported && <p className="text-xs text-warn">Samme overføring som en annen rad i filen</p>}
                     {!r.imported && (
                       <div className="grid grid-cols-[auto_1fr] gap-2">
                         <select className="field text-sm w-auto" aria-label="Type" value={r.kind}
@@ -219,10 +240,20 @@ export function ImportPage() {
                           }}>
                           {(r.bank.direction === 'out' ? KINDS_OUT : KINDS_IN).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
                         </select>
+                        {r.kind === 'transfer' ? (
+                          <select className="field text-sm min-w-0" aria-label={r.bank.direction === 'out' ? 'Til konto' : 'Fra konto'}
+                            value={otherOf(r) ?? ''} onChange={(e) => update(i, { otherAccountId: e.target.value || null })}>
+                            <option value="">{r.bank.direction === 'out' ? 'Til en konto som ikke er i appen' : 'Fra en konto som ikke er i appen'}</option>
+                            {activeAccounts.filter((a) => a.id !== accountId).map((a) => (
+                              <option key={a.id} value={a.id}>{r.bank.direction === 'out' ? 'Til ' : 'Fra '}{a.name}</option>
+                            ))}
+                          </select>
+                        ) : (
                         <div className="min-w-0 text-sm">
-                          <CategorySelect categories={app.categories} kind={r.kind === 'income' ? 'income' : 'expense'}
-                            value={r.categoryId} onChange={(id) => update(i, { categoryId: id })} />
-                        </div>
+                            <CategorySelect categories={app.categories} kind={r.kind === 'income' ? 'income' : 'expense'}
+                              value={r.categoryId} onChange={(id) => update(i, { categoryId: id })} />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

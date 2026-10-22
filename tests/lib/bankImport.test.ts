@@ -128,10 +128,11 @@ describe('likelyTransfers', () => {
       row('2026-10-21', 'in', 17631.42, 'Innbetaling'),
       row('2026-10-21', 'out', 99, 'Rema 1000'),
     ]
-    expect([...likelyTransfers(rows)].sort()).toEqual([0, 1])
+    expect([...likelyTransfers(rows)]).toEqual([[0, 'transfer'], [1, 'mirror']])
   })
   it('en ensom innbetaling til kortet regnes også som overføring', () => {
-    expect([...likelyTransfers([row('2026-10-14', 'in', 4000, 'Innbetaling')])]).toEqual([0])
+    expect([...likelyTransfers([row('2026-10-14', 'in', 4000, 'Innbetaling')])]).toEqual([[0, 'transfer']])
+    expect([...likelyTransfers([row('2026-10-14', 'out', 4000, 'Til : 1234.56.78901')])]).toEqual([[0, 'transfer']])
   })
   it('lønn og vanlige kjøp med samme beløp pares ikke', () => {
     const rows = [row('2026-10-20', 'in', 500, 'Aspia Norge As'), row('2026-10-20', 'out', 500, 'XXL')]

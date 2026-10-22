@@ -106,7 +106,12 @@ async function rest(req: IncomingMessage, res: ServerResponse, url: URL) {
     const args = await body(req)
     const keys = Object.keys(args)
     const vals = keys.map((k) => (k === 'p_splits' || k === 'p_rows' ? JSON.stringify(args[k]) : args[k]))
-    const sql = `select to_json(public.${ident(fn)}(${keys.map((k, i) => `${ident(k)} => $${i + 1}`).join(', ')})) as r`
+    const call = `public.${ident(fn)}(${keys.map((k, i) => `${ident(k)} => $${i + 1}`).join(', ')})`
+    // Funksjoner som gir flere rader blir en liste, som i PostgREST
+    const setof = (await db.query<{ s: boolean }>(`select bool_or(proretset) as s from pg_proc where proname = $1 and pronamespace = 'public'::regnamespace`, [fn])).rows[0]?.s
+    const sql = setof
+      ? `select coalesce(json_agg(x), '[]') as r from ${call} x`
+      : `select to_json(${call}) as r`
     const r = await asRequester(req, (q) => q(sql, vals))
     return send(res, 200, r.rows[0].r)
   }

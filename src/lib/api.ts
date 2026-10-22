@@ -431,3 +431,12 @@ export function useIngestTokenMutations() {
     }),
   }
 }
+
+/** Kategoriforslag fra kjedelista i databasen, for butikker uten lært kategori. */
+export async function suggestFromRules(householdId: string, names: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  if (names.length === 0) return map
+  const rows = check(await supabase.rpc('suggest_categories', { p_household_id: householdId, p_names: names })) as { name: string; category_id: string | null }[]
+  for (const r of rows) if (r.category_id) map.set(r.name, r.category_id)
+  return map
+}

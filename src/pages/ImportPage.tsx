@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../app/AppContext'
 import { CategorySelect } from '../components/CategorySelect'
 import { useToast } from '../components/Toast'
-import { fetchExistingForImport, useImportTransactions, type ImportRow } from '../lib/api'
+import { fetchExistingForImport, suggestFromRules, useImportTransactions, type ImportRow } from '../lib/api'
 import { cleanMerchant, decodeBankFile, importKeys, likelyDuplicates, matchKnownMerchant, parseBankCsv, type BankRow } from '../lib/bankImport'
 import { formatDate, monthOf, shiftDay, todayISO } from '../lib/dates'
 import { KIND_LABEL, suggestCategory } from '../lib/finance'
@@ -65,14 +65,20 @@ export function ImportPage() {
       const dupIdx = likelyDuplicates(fresh.map((f) => f.r), existing)
       const dupRows = new Set([...dupIdx].map((j) => fresh[j].i))
 
+      const merchants = parsed.rows.map((r) => matchKnownMerchant(cleanMerchant(r.description), app.merchants))
+      // Butikker uten lært kategori slås opp i kjedelista i databasen
+      const unknown = [...new Set(parsed.rows.flatMap((r, i) =>
+        r.direction === 'out' && merchants[i] && !suggest(merchants[i], 'expense') ? [merchants[i]] : []))]
+      const fromRules = await suggestFromRules(app.householdId, unknown).catch(() => new Map<string, string>())
+
       setRows(parsed.rows.map((r, i) => {
-        const merchant = matchKnownMerchant(cleanMerchant(r.description), app.merchants)
+        const merchant = merchants[i]
         const kind: Kind = r.direction === 'out' ? 'expense' : 'income'
         const imported = importedKeys.has(keys[i])
         const maybeDuplicate = dupRows.has(i)
         return {
           bank: r, key: keys[i], merchant, kind,
-          categoryId: suggest(merchant, kind),
+          categoryId: suggest(merchant, kind) ?? (kind === 'expense' ? fromRules.get(merchant) ?? null : null),
           include: !imported && !maybeDuplicate,
           imported, maybeDuplicate,
         }

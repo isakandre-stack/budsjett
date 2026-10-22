@@ -12,6 +12,25 @@ const DNB_OLD = [
 ].join('\r\n')
 
 describe('parseBankCsv', () => {
+  it('leser DNB sitt nye format med Transaksjonsdato og ISO-datoer', () => {
+    const csv = 'Transaksjonsdato;Kontonummer;Beskrivelse;Ut av konto;Inn på konto;Valuta\r\n' +
+      '2026-10-21;********;Innbetaling;;17631,42;NOK\r\n' +
+      '2026-10-20;********;Www.Voiscooters.Com;7,5;;NOK\r\n' +
+      '2026-10-19;********;Vipps*Vg+;99;;NOK\r\n'
+    const r = parseBankCsv(csv)
+    expect(r.skipped).toEqual([])
+    expect(r.rows.map((x) => [x.date, x.direction, x.amountOre, x.description])).toEqual([
+      ['2026-10-21', 'in', 1763142, 'Innbetaling'],
+      ['2026-10-20', 'out', 750, 'Www.Voiscooters.Com'],
+      ['2026-10-19', 'out', 9900, 'Vipps*Vg+'],
+    ])
+  })
+
+  it('foretrekker kjøpsdato framfor bokført dato', () => {
+    const r = parseBankCsv('Bokført dato;Transaksjonsdato;Forklaring;Ut;Inn\n20.10.2026;18.10.2026;REMA;10,00;\n')
+    expect(r.rows[0].date).toBe('2026-10-18')
+  })
+
   it('leser eldre DNB-fil', () => {
     const { rows, skipped } = parseBankCsv(DNB_OLD)
     expect(skipped).toEqual([])
@@ -50,6 +69,17 @@ describe('parseBankCsv', () => {
 })
 
 describe('cleanMerchant', () => {
+  it('rydder betalingsformidlere og rester fra DNB sitt nye format', () => {
+    expect(cleanMerchant('Vipps*Ruter')).toBe('Ruter')
+    expect(cleanMerchant('Vipps*Vg+')).toBe('Vg+')
+    expect(cleanMerchant('Aer*Kiwi 333 Etterstad')).toBe('Kiwi 333 Etterstad')
+    expect(cleanMerchant('Ubr* Pending.Uber.Com')).toBe('Uber')
+    expect(cleanMerchant('Anthropic* Claude Sub')).toBe('Anthropic Claude Sub')
+    expect(cleanMerchant('Matchi - 119612357')).toBe('Matchi')
+    expect(cleanMerchant('Shopify* 603596991')).toBe('Shopify')
+    expect(cleanMerchant('Rema 1000 Valle')).toBe('Rema 1000 Valle')
+  })
+
   it.each([
     ['Varekjøp REMA 1000 LILLESTRØ LILLESTRØM Dato 17.10', 'REMA 1000 LILLESTRØ LILLESTRØM'],
     ['Visa 123456 *1234 15.10 NOK 89,00 NARVESEN Kurs: 1.0000', 'NARVESEN'],

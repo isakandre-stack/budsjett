@@ -88,17 +88,26 @@ function parseSigned(s: string): number | null {
 
 export function parseBankCsv(text: string): ParseResult {
   const lines = text.split(/\r?\n/)
-  // Overskriftslinjen har en kolonne som heter "Dato" eller slutter på "dato" ("Bokført dato")
+  // Overskriftslinjen har en kolonne som heter "Dato" eller slutter på "dato" ("Bokført dato", "Transaksjonsdato")
   const headerIdx = lines.findIndex((l) =>
-    l.split(/[;,\t]/).some((f) => /(^|\s)dato$/i.test(f.replace(/"/g, '').trim())))
+    l.split(/[;,\t]/).some((f) => /dato$/i.test(f.replace(/"/g, '').trim())))
   if (headerIdx < 0) throw new Error('Fant ikke kolonneoverskriftene. Er dette en kontoutskrift fra nettbanken, lagret som CSV?')
   const sep = detectSeparator(lines[headerIdx])
   const table = parseCsv(lines.slice(headerIdx).join('\n'), sep)
   const header = table[0].map(norm)
 
   const find = (test: (h: string) => boolean) => header.findIndex(test)
-  const cDate = find((h) => h === 'dato' || h === 'bokført dato' || h === 'bokføringsdato' || (h.startsWith('dato') && !h.includes('rente')))
-  const cDesc = find((h) => /forklaring|beskrivelse|tekst|mottaker|transaksjon/.test(h))
+  const isDate = (h: string) => /dato$/.test(h) || h.startsWith('dato')
+  // Kjøpsdatoen foretrekkes framfor bokføringsdatoen, og rentedato brukes aldri
+  const cDate = [
+    (h: string) => h === 'transaksjonsdato' || h === 'dato',
+    (h: string) => h === 'bokført dato' || h === 'bokføringsdato',
+    (h: string) => isDate(h) && !h.includes('rente'),
+  ].map(find).find((i) => i >= 0) ?? -1
+  const cDesc = [
+    (h: string) => /forklaring|beskrivelse|tekst|mottaker/.test(h),
+    (h: string) => /transaksjon/.test(h) && !isDate(h),
+  ].map(find).find((i) => i >= 0) ?? -1
   const cOut = find((h) => /uttak|ut fra|ut av|^ut$|belastet/.test(h))
   const cIn = find((h) => /innskudd|inn på|^inn$|godskrevet/.test(h))
   const cAmount = find((h) => /^beløp|^belop|^amount/.test(h))
@@ -144,6 +153,11 @@ export function cleanMerchant(description: string): string {
   s = s.replace(/\s\d{1,2}\.\d{1,2}(\.\d{2,4})?(?=\s)/g, ' ') // datoer
   s = s.replace(/\s(NOK|SEK|EUR|USD|DKK|GBP)\s[\d.,]+/gi, ' ')
   s = s.replace(/\s\d{6,}(?=\s)/g, ' ')                  // lange referanser og kontonumre
+  s = s.replace(/\sUbr\*?\s*Pending\.Uber\.Com/i, ' Uber')
+  // Betalingsformidlere foran butikknavnet: "Vipps*Ruter", "Aer*Kiwi 333", "Vfi*Holdbart"
+  s = s.replace(/^\s*(Vipps|Aer|Vfi|Sumup|Zettle_?|Iz|Sq|Pp)\s*\*\s*/i, ' ')
+  s = s.replace(/\*/g, ' ')
+  s = s.replace(/[\s-]+$/, '')
   s = s.replace(/\s+/g, ' ').trim()
   return (s || description.trim()).slice(0, 80)
 }

@@ -146,6 +146,8 @@ export function parseBankCsv(text: string): ParseResult {
  * "Visa 123456 *1234 18.10 NOK 249,00 NARVESEN Kurs: 1.0000" -> "NARVESEN"
  */
 export function cleanMerchant(description: string): string {
+  // "Til : 1234.56.78901" og lignende er overføringer til en konto, ikke en butikk
+  if (/^\s*(Til|Fra)\s*:?\s*[\d.\s]*$/i.test(description)) return /^\s*Fra/i.test(description) ? 'Overføring inn' : 'Overføring ut'
   let s = ` ${description} `
   s = s.replace(/\s(Dato|Kurs|Valutakurs|Betalt|Bokført)\b.*$/i, ' ')
   s = s.replace(/\s(Varekjøp|Varekjop|Kortkjøp|Visa|Reservert|Kontaktløs|Betaling|Nettgiro|Giro|Til|Fra)(?=\s)/gi, ' ')
@@ -219,4 +221,32 @@ export function likelyDuplicates(rows: BankRow[], existing: ExistingTx[]): Set<n
     if (best) { used.add(best.id); dup.add(i) }
   })
   return dup
+}
+
+const TRANSFER_TEXT = /^\s*(til|fra)\s*:|^\s*innbetaling\s*$|overføring|overforing|nedbetaling kredittkort/i
+
+/**
+ * Finner rader som trolig er penger mellom dine egne kontoer, for eksempel nedbetaling av kredittkortet:
+ * "Til : konto" ut fra brukskontoen og "Innbetaling" inn på kortet, med samme beløp.
+ * Slike rader er verken inntekt eller forbruk. En ensom "Innbetaling" regnes også med,
+ * siden kortet kan være betalt fra en konto som ikke er i filen. Returnerer indeksene.
+ */
+export function likelyTransfers(rows: BankRow[]): Set<number> {
+  const out = new Set<number>()
+  const dayNum = (iso: string) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86_400_000
+  const looks = rows.map((r) => TRANSFER_TEXT.test(r.description))
+  rows.forEach((r, i) => {
+    if (out.has(i) || r.direction !== 'out') return
+    let best = -1
+    let bestGap = Infinity
+    rows.forEach((o, j) => {
+      if (out.has(j) || o.direction !== 'in' || o.amountOre !== r.amountOre) return
+      if (!looks[i] && !looks[j]) return
+      const gap = Math.abs(dayNum(o.date) - dayNum(r.date))
+      if (gap <= 2 && gap < bestGap) { best = j; bestGap = gap }
+    })
+    if (best >= 0) { out.add(i); out.add(best) }
+  })
+  rows.forEach((r, i) => { if (r.direction === 'in' && /^\s*innbetaling\s*$/i.test(r.description)) out.add(i) })
+  return out
 }

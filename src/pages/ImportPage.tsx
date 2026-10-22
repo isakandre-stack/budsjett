@@ -4,7 +4,7 @@ import { useApp } from '../app/AppContext'
 import { CategorySelect } from '../components/CategorySelect'
 import { useToast } from '../components/Toast'
 import { fetchExistingForImport, suggestFromRules, useImportTransactions, type ImportRow } from '../lib/api'
-import { cleanMerchant, decodeBankFile, importKeys, likelyDuplicates, matchKnownMerchant, parseBankCsv, type BankRow } from '../lib/bankImport'
+import { cleanMerchant, decodeBankFile, importKeys, likelyDuplicates, likelyTransfers, matchKnownMerchant, parseBankCsv, type BankRow } from '../lib/bankImport'
 import { formatDate, monthOf, shiftDay, todayISO } from '../lib/dates'
 import { KIND_LABEL, suggestCategory } from '../lib/finance'
 import { formatOre } from '../lib/money'
@@ -23,6 +23,8 @@ interface Draft {
   imported: boolean
   /** Ser ut som noe du har ført for hånd */
   maybeDuplicate: boolean
+  /** Ser ut som penger mellom egne kontoer, for eksempel nedbetaling av kredittkortet */
+  maybeTransfer: boolean
 }
 
 const KINDS_OUT: Kind[] = ['expense', 'saving']
@@ -64,6 +66,7 @@ export function ImportPage() {
       const fresh = parsed.rows.map((r, i) => ({ r, i })).filter(({ i }) => !importedKeys.has(keys[i]))
       const dupIdx = likelyDuplicates(fresh.map((f) => f.r), existing)
       const dupRows = new Set([...dupIdx].map((j) => fresh[j].i))
+      const transfers = likelyTransfers(parsed.rows)
 
       const merchants = parsed.rows.map((r) => matchKnownMerchant(cleanMerchant(r.description), app.merchants))
       // Butikker uten lært kategori slås opp i kjedelista i databasen
@@ -76,11 +79,12 @@ export function ImportPage() {
         const kind: Kind = r.direction === 'out' ? 'expense' : 'income'
         const imported = importedKeys.has(keys[i])
         const maybeDuplicate = dupRows.has(i)
+        const maybeTransfer = transfers.has(i)
         return {
           bank: r, key: keys[i], merchant, kind,
           categoryId: suggest(merchant, kind) ?? (kind === 'expense' ? fromRules.get(merchant) ?? null : null),
-          include: !imported && !maybeDuplicate,
-          imported, maybeDuplicate,
+          include: !imported && !maybeDuplicate && !maybeTransfer,
+          imported, maybeDuplicate, maybeTransfer,
         }
       }))
       setSkipped(parsed.skipped)
@@ -109,6 +113,7 @@ export function ImportPage() {
       in: chosen.filter((r) => r.bank.direction === 'in').reduce((s, r) => s + r.bank.amountOre, 0),
       imported: rows.filter((r) => r.imported).length,
       dup: rows.filter((r) => r.maybeDuplicate).length,
+      transfers: rows.filter((r) => r.maybeTransfer && !r.imported).length,
       uncategorized: chosen.filter((r) => !r.categoryId && r.kind !== 'income').length,
     }
   }, [rows])
@@ -175,6 +180,7 @@ export function ImportPage() {
               </p>
             )}
             {stats.dup > 0 && <p className="text-warn">{stats.dup} ser ut som kjøp du har ført for hånd, og er ikke valgt. Huk av hvis de likevel skal med.</p>}
+            {stats.transfers > 0 && <p className="text-warn">{stats.transfers} ser ut som overføringer mellom egne kontoer (som nedbetaling av kredittkortet), og er ikke valgt. De er verken inntekt eller forbruk.</p>}
             {skipped.length > 0 && <p className="text-muted">{skipped.length} linjer kunne ikke leses (for eksempel saldolinjer) og er hoppet over.</p>}
             {stats.uncategorized > 0 && <p className="text-muted">{stats.uncategorized} valgte rader mangler kategori. Det går fint, du kan sette den senere.</p>}
           </div>
@@ -201,6 +207,7 @@ export function ImportPage() {
                     </p>
                     {r.imported && <p className="text-xs text-muted">Importert før</p>}
                     {r.maybeDuplicate && !r.imported && <p className="text-xs text-warn">Ligner et kjøp du har ført selv</p>}
+                    {r.maybeTransfer && !r.imported && <p className="text-xs text-warn">Ser ut som overføring mellom egne kontoer</p>}
                     {!r.imported && (
                       <div className="grid grid-cols-[auto_1fr] gap-2">
                         <select className="field text-sm w-auto" aria-label="Type" value={r.kind}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanMerchant, decodeBankFile, importKeys, likelyDuplicates, matchKnownMerchant, parseBankCsv } from '../../src/lib/bankImport'
+import { cleanMerchant, decodeBankFile, importKeys, likelyDuplicates, likelyTransfers, matchKnownMerchant, parseBankCsv } from '../../src/lib/bankImport'
 
 // Eldre DNB-format: semikolon, norsk dato, beløp ut og inn i hver sin kolonne
 const DNB_OLD = [
@@ -117,5 +117,32 @@ describe('likelyDuplicates', () => {
     ]
     // Bare én av de to REMA-radene matcher, og Narvesen er for langt unna i tid
     expect([...likelyDuplicates(rows, existing)]).toEqual([0])
+  })
+})
+
+describe('likelyTransfers', () => {
+  const row = (date: string, direction: 'in' | 'out', kr: number, description: string) => ({ line: 0, date, direction, amountOre: kr * 100, description })
+  it('kjenner igjen nedbetaling av kredittkortet fra brukskontoen', () => {
+    const rows = [
+      row('2026-10-21', 'out', 17631.42, 'Til : 1234.56.78901'),
+      row('2026-10-21', 'in', 17631.42, 'Innbetaling'),
+      row('2026-10-21', 'out', 99, 'Rema 1000'),
+    ]
+    expect([...likelyTransfers(rows)].sort()).toEqual([0, 1])
+  })
+  it('en ensom innbetaling til kortet regnes også som overføring', () => {
+    expect([...likelyTransfers([row('2026-10-14', 'in', 4000, 'Innbetaling')])]).toEqual([0])
+  })
+  it('lønn og vanlige kjøp med samme beløp pares ikke', () => {
+    const rows = [row('2026-10-20', 'in', 500, 'Aspia Norge As'), row('2026-10-20', 'out', 500, 'XXL')]
+    expect(likelyTransfers(rows).size).toBe(0)
+  })
+  it('venn som sender og får tilbake flere dager senere pares ikke', () => {
+    const rows = [row('2026-10-17', 'in', 5000, 'Kari Nordmann'), row('2026-10-20', 'out', 5000, 'Vipps*Kari Nordmann')]
+    expect(likelyTransfers(rows).size).toBe(0)
+  })
+  it('gir overføringen et navn i stedet for bare kolon', () => {
+    expect(cleanMerchant('Til : 1234.56.78901')).toBe('Overføring ut')
+    expect(cleanMerchant('Fra: 1234.56.78901')).toBe('Overføring inn')
   })
 })

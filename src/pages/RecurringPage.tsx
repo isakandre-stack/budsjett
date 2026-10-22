@@ -94,11 +94,15 @@ function Row({ r, today, onEdit }: { r: Recurring; today: string; onEdit: () => 
   )
 }
 
-function RecurringEditor({ target, onClose }: { target: Recurring | 'new' | null; onClose: () => void }) {
+/** Utkast fra et sted utenfor siden, for eksempel et abonnement som skal bli fast post */
+export type RecurringDraft = { draft: Partial<RecurringInput> }
+
+export function RecurringEditor({ target, onClose }: { target: Recurring | 'new' | RecurringDraft | null; onClose: () => void }) {
   const app = useApp()
   const m = useRecurringMutations(app.householdId)
   const toast = useToast()
-  const existing = target && target !== 'new' ? target : null
+  const existing = target && target !== 'new' && !('draft' in target) ? target : null
+  const draft = target && target !== 'new' && 'draft' in target ? target.draft : null
 
   const [kind, setKind] = useState<TxKind>('expense')
   const [merchant, setMerchant] = useState('')
@@ -114,15 +118,16 @@ function RecurringEditor({ target, onClose }: { target: Recurring | 'new' | null
 
   useEffect(() => {
     if (!target) return
-    setKind(existing?.kind ?? 'expense')
-    setMerchant(existing?.merchant ?? '')
-    setAmount(existing ? oreToInput(existing.amount_ore) : '')
-    setDay(existing?.day_of_month ?? Number(todayISO().slice(8, 10)))
-    setCategoryId(existing?.category_id ?? null)
-    setAccountId(existing ? existing.account_id : app.defaultAccountId)
-    setStartOn(existing?.start_on ?? todayISO())
-    setEndOn(existing?.end_on ?? '')
-    setNote(existing?.note ?? '')
+    const src = existing ?? draft
+    setKind(src?.kind ?? 'expense')
+    setMerchant(src?.merchant ?? '')
+    setAmount(src?.amount_ore ? oreToInput(src.amount_ore) : '')
+    setDay(src?.day_of_month ?? Number(todayISO().slice(8, 10)))
+    setCategoryId(src?.category_id ?? null)
+    setAccountId(src && 'account_id' in src && src.account_id !== undefined ? src.account_id : app.defaultAccountId)
+    setStartOn(src?.start_on ?? todayISO())
+    setEndOn(src?.end_on ?? '')
+    setNote(src?.note ?? '')
     setError(null)
     setConfirmDelete(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -440,3 +440,29 @@ export async function suggestFromRules(householdId: string, names: string[]): Pr
   for (const r of rows) if (r.category_id) map.set(r.name, r.category_id)
   return map
 }
+
+// ============================================================
+// Abonnementsjeger
+// ============================================================
+
+/** Tjenester du har sagt ikke er abonnement. Gir tom liste i stedet for feil, så resten av appen aldri stopper av dette. */
+export function useIgnoredSubscriptions(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['ignored_subscriptions', userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const res = await supabase.from('user_preferences').select('ignored_subscriptions').eq('user_id', userId!).maybeSingle()
+      if (res.error) return [] as string[]
+      return ((res.data as { ignored_subscriptions?: string[] } | null)?.ignored_subscriptions ?? []) as string[]
+    },
+  })
+}
+
+export function useSetIgnoredSubscriptions() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ userId, keys }: { userId: string; keys: string[] }) =>
+      check(await supabase.from('user_preferences').update({ ignored_subscriptions: keys }).eq('user_id', userId)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ignored_subscriptions'] }),
+  })
+}

@@ -8,6 +8,7 @@ import { useTransactions } from '../lib/api'
 import { monthLabel, monthOf, todayISO } from '../lib/dates'
 import { budgetFactor, budgetStatus, compareWithPrevious, previousComparablePeriod, summarize, upcomingFixedSpending, type BudgetStatus } from '../lib/finance'
 import { formatOre } from '../lib/money'
+import { useSubscriptions } from '../lib/useSubscriptions'
 
 export function Dashboard() {
   const app = useApp()
@@ -108,6 +109,7 @@ export function Dashboard() {
                 {ongoing && <Stat label="Anslag for perioden" value={formatOre(s.forecastSpendingOre!, { decimals: 'never' })} hint="Variabelt forbruk i samme tempo, pluss faste poster" />}
                 {s.upcomingFixedOre > 0 && <Stat label="Faste utgifter som gjenstår" value={formatOre(s.upcomingFixedOre)} hint="Registreres automatisk på dagen" />}
               </dl>
+              <SubscriptionCard />
             </section>
 
             <section aria-labelledby="kategorier">
@@ -219,5 +221,27 @@ function BudgetBar({ spent, budget, status }: { spent: number; budget: number; s
         {status === 'warn' && '. Med samme tempo går du over.'}
       </p>
     </div>
+  )
+}
+
+/** Kort som viser hva faste trekk koster, med lenke til abonnementsjegeren */
+function SubscriptionCard() {
+  const s = useSubscriptions()
+  if (!s.subs) return null
+  const count = s.subsCount
+  const pricier = s.subs.filter((x) => x.status === 'active' && x.priceChange && x.priceChange.toOre > x.priceChange.fromOre).length
+  return (
+    <Link to="/abonnementer" className="mt-3 flex items-center gap-3 rounded-xl bg-surface px-4 py-3 hover:bg-sunken">
+      <span className="flex-1 min-w-0">
+        <span className="block font-medium">Abonnementer</span>
+        <span className="block text-sm text-muted truncate">
+          {count === 0 ? 'Se hva som trekkes jevnlig'
+            : <>{count} stk · <span className="num">{formatOre(s.subsMonthlyOre * 12, { decimals: 'never' })}</span> i året</>}
+          {pricier > 0 && <span className="text-warn"> · {pricier} har blitt dyrere</span>}
+        </span>
+      </span>
+      {count > 0 && <span className="num font-semibold whitespace-nowrap">{formatOre(s.subsMonthlyOre, { decimals: 'never' })}<span className="text-muted font-normal text-sm">/mnd</span></span>}
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" className="text-muted shrink-0"><path d="M7 4l5 5-5 5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    </Link>
   )
 }

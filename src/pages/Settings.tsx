@@ -35,6 +35,7 @@ function Planning() {
   const items = [
     { to: '/budsjett', title: 'Budsjett', text: budgets.length ? `${budgets.length} kategorier har budsjett` : 'Sett et beløp per kategori i måneden' },
     { to: '/faste', title: 'Faste poster', text: recurring.length ? `${recurring.filter((r) => r.is_active).length} aktive, registreres automatisk` : 'Husleie, abonnementer og lønn, registrert automatisk' },
+    { to: '/abonnementer', title: 'Abonnementer', text: 'Finner det som trekkes jevnlig, og hva det koster i året' },
     { to: '/apple-pay', title: 'Automatisk fra Apple Pay', text: 'Kjøp føres av seg selv når du betaler med telefonen' },
     { to: '/import', title: 'Importer fra banken', text: 'Last inn kontoutskrift fra DNB som CSV' },
   ]

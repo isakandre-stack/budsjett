@@ -11,6 +11,8 @@ const db = await createDb()
 
 const USER = { id: '11111111-1111-1111-1111-111111111111', email: 'isak@example.com', password: 'test1234' }
 await createUser(db, USER.id, USER.email)
+// Valgfri testdata: SEED_SQL=fil.sql kjøres som superbruker etter at brukeren er laget
+if (process.env.SEED_SQL) await db.exec((await import('node:fs')).readFileSync(process.env.SEED_SQL, 'utf8'))
 const factors: { id: string; status: 'verified' | 'unverified'; friendly_name: string }[] = []
 if (process.env.MFA_DONE) factors.push({ id: randomUUID(), status: 'verified', friendly_name: 'Test' })
 

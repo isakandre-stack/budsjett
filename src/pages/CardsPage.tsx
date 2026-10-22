@@ -23,8 +23,8 @@ export function CardsPage() {
       <h1 className="text-2xl font-bold tracking-tight">Kort</h1>
       <p className="text-sm text-muted mt-1">
         Trykk for å åpne kundeprogrammet når du står i kassa.
-        {platform === 'ios' && ' På iPhone går det via App Store, der du trykker Åpne.'}
       </p>
+      {platform === 'ios' && <ShortcutHelp />}
 
       <ul className="mt-4 grid grid-cols-2 gap-3">
         {all.map((a) => (
@@ -62,7 +62,7 @@ export function CardsPage() {
 function AppTile({ app, platform }: { app: LoyaltyApp; platform: ReturnType<typeof detectPlatform> }) {
   const href = openUrl(app, platform)
   return (
-    <div className="rounded-2xl h-28 text-white flex flex-col overflow-hidden shadow-sm" style={{ background: app.color }}>
+    <div className="rounded-2xl min-h-28 text-white flex flex-col overflow-hidden shadow-sm" style={{ background: app.color }}>
       <a href={href ?? undefined} target={href?.startsWith('https:') ? '_blank' : undefined} rel="noopener noreferrer"
         className="flex-1 flex flex-col justify-between p-4 active:opacity-80">
         <span className="font-bold text-lg leading-tight pr-6">{app.name}</span>
@@ -71,6 +71,11 @@ function AppTile({ app, platform }: { app: LoyaltyApp; platform: ReturnType<type
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </span>
       </a>
+      {platform === 'ios' && app.shortcut && app.ios && (
+        <a className="text-xs text-center py-1.5 border-t border-white/20 hover:bg-black/15" href={appStoreUrl(app.ios)} target="_blank" rel="noopener noreferrer">
+          Virker ikke? Via App Store
+        </a>
+      )}
       {platform === 'other' && !app.custom && (
         <span className="flex text-xs border-t border-white/20">
           {app.ios && <a className="flex-1 text-center py-1.5 hover:bg-black/15" href={appStoreUrl(app.ios)} target="_blank" rel="noopener noreferrer">App Store</a>}
@@ -78,6 +83,22 @@ function AppTile({ app, platform }: { app: LoyaltyApp; platform: ReturnType<type
         </span>
       )}
     </div>
+  )
+}
+
+function ShortcutHelp() {
+  const names = PRESETS.filter((a) => a.shortcut).map((a) => `«${a.shortcut}»`).join(' og ')
+  return (
+    <details className="mt-3 rounded-xl bg-surface px-4 py-3 text-sm">
+      <summary className="font-medium cursor-pointer">Første gang på iPhone: lag snarveiene</summary>
+      <ol className="list-decimal pl-5 mt-2 space-y-1 text-muted">
+        <li>Åpne appen Snarveier og trykk +.</li>
+        <li>Legg til handlingen Åpne app og velg Trumf.</li>
+        <li>Gi snarveien navnet Trumf og lagre.</li>
+        <li>Gjør det samme for Coop medlem, med navnet Coop.</li>
+      </ol>
+      <p className="mt-2 text-muted">Navnene må være nøyaktig {names}. Første gang spør telefonen om lov til å åpne Snarveier.</p>
+    </details>
   )
 }
 

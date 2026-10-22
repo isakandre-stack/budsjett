@@ -18,8 +18,9 @@ describe('openUrl', () => {
     expect(u.startsWith('intent://#Intent;package=no.norgesgruppen.apps.trumf.trumf;')).toBe(true)
     expect(u).toContain(encodeURIComponent('https://play.google.com/store/apps/details?id=no.norgesgruppen.apps.trumf.trumf'))
   })
-  it('iPhone går via App Store', () => {
-    expect(openUrl(trumf, 'ios')).toBe('https://apps.apple.com/no/app/id1481070828')
+  it('iPhone kjører snarveien, og uten snarvei går den via App Store', () => {
+    expect(openUrl(trumf, 'ios')).toBe('shortcuts://run-shortcut?name=Trumf')
+    expect(openUrl({ ...trumf, shortcut: undefined }, 'ios')).toBe('https://apps.apple.com/no/app/id1481070828')
   })
   it('egne snarveier bruker sin egen lenke', () => {
     expect(openUrl({ id: 'x', name: 'X', color: '#000', url: 'https://apps.apple.com/no/app/id1' }, 'android')).toBe('https://apps.apple.com/no/app/id1')

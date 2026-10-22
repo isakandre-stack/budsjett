@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
+/** Brukes i oppsettet av Apple Pay-automasjonen på iPhone */
+export const supabaseUrl = url ?? ''
+export const publicKey = anonKey ?? ''
+
 export const configured = Boolean(url && anonKey)
 
 // Anon-nøkkelen er offentlig av natur. All beskyttelse ligger i innlogging,

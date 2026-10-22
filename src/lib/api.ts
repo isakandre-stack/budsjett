@@ -393,3 +393,41 @@ export function useImportTransactions() {
     onSuccess: invalidate,
   })
 }
+
+// ============================================================
+// Apple Pay: nøkler som lar Snarveier på iPhone føre kjøp
+// ============================================================
+
+export interface IngestToken {
+  id: string
+  label: string
+  created_at: string
+  last_used_at: string | null
+}
+
+export function useIngestTokens(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['ingest_tokens', userId],
+    enabled: !!userId,
+    // token_hash er ikke lesbar fra appen, så kolonnene må listes eksplisitt
+    queryFn: async () =>
+      check(await supabase.from('ingest_tokens').select('id, label, created_at, last_used_at')
+        .eq('user_id', userId!).order('created_at')) as IngestToken[],
+  })
+}
+
+export function useIngestTokenMutations() {
+  const qc = useQueryClient()
+  const done = () => qc.invalidateQueries({ queryKey: ['ingest_tokens'] })
+  return {
+    create: useMutation({
+      mutationFn: async ({ householdId, label }: { householdId: string; label: string }) =>
+        check(await supabase.rpc('create_ingest_token', { p_household_id: householdId, p_label: label })) as string,
+      onSuccess: done,
+    }),
+    remove: useMutation({
+      mutationFn: async (id: string) => { check(await supabase.from('ingest_tokens').delete().eq('id', id)) },
+      onSuccess: done,
+    }),
+  }
+}

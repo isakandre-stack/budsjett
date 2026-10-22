@@ -14,6 +14,7 @@ import { BudgetPage } from './pages/BudgetPage'
 import { RecurringPage } from './pages/RecurringPage'
 import { ImportPage } from './pages/ImportPage'
 import { CardsPage } from './pages/CardsPage'
+import { ApplePayPage } from './pages/ApplePayPage'
 import { configured } from './lib/supabase'
 import { applyTheme, storedTheme } from './lib/theme'
 import { startUpdates } from './lib/update'
@@ -59,6 +60,7 @@ createRoot(document.getElementById('root')!).render(
                       <Route path="faste" element={<RecurringPage />} />
                       <Route path="import" element={<ImportPage />} />
                       <Route path="kort" element={<CardsPage />} />
+                      <Route path="apple-pay" element={<ApplePayPage />} />
                       <Route path="*" element={<Dashboard />} />
                     </Route>
                   </Routes>

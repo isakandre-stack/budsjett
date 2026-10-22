@@ -8,6 +8,12 @@ import { TxEditor } from '../components/TxEditor'
 const icons: Record<string, ReactNode> = {
   oversikt: <path d="M4 13h4v7H4zM10 8h4v12h-4zM16 4h4v16h-4z" fill="currentColor" />,
   transaksjoner: <path d="M5 6h14M5 12h14M5 18h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />,
+  kort: (
+    <g fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="6" width="18" height="13" rx="2.5" />
+      <path d="M3 10h18M7 15h4" strokeLinecap="round" />
+    </g>
+  ),
   innstillinger: (
     <g fill="none" stroke="currentColor" strokeWidth="2">
       <circle cx="12" cy="12" r="3" />
@@ -19,6 +25,7 @@ const icons: Record<string, ReactNode> = {
 const NAV = [
   { to: '/', label: 'Oversikt', icon: 'oversikt', end: true },
   { to: '/transaksjoner', label: 'Transaksjoner', icon: 'transaksjoner', end: false },
+  { to: '/kort', label: 'Kort', icon: 'kort', end: false },
   { to: '/innstillinger', label: 'Innstillinger', icon: 'innstillinger', end: false },
 ]
 
@@ -68,7 +75,7 @@ export function Layout() {
 
       {/* Bunnmeny på mobil, med stor registreringsknapp i midten */}
       <nav aria-label="Hovedmeny" className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-surface/95 backdrop-blur border-t border-line pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-4 items-center h-16">
+        <div className="grid grid-cols-5 items-center h-16">
           {NAV.slice(0, 2).map((n) => <MobileLink key={n.to} {...n} />)}
           <div className="flex justify-center">
             <button onClick={() => setQuickOpen(true)} aria-label="Registrer kjøp"
@@ -76,7 +83,7 @@ export function Layout() {
               <Plus />
             </button>
           </div>
-          <MobileLink {...NAV[2]} />
+          {NAV.slice(2).map((n) => <MobileLink key={n.to} {...n} />)}
         </div>
       </nav>
 
